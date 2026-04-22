@@ -403,7 +403,7 @@ namespace IndigoMovieManager
                 }
 
                 (
-                    bool shouldBreakByFinalQueueFlush,
+                    WatchLoopDecision finalQueueFlushDecision,
                     enqueueFlushTotalMs
                 ) = await TryCompleteWatchFolderAsync(
                     folderScanContext,
@@ -417,8 +417,8 @@ namespace IndigoMovieManager
                     uiReflectTotalMs,
                     enqueueFlushTotalMs
                 );
-                TryHandleWatchFolderCompletionDecision(
-                    shouldBreakByFinalQueueFlush,
+                TryHandleWatchLoopDecision(
+                    finalQueueFlushDecision,
                     ref watchStoppedByUiSuppression
                 );
                 if (watchStoppedByUiSuppression)
@@ -675,7 +675,7 @@ namespace IndigoMovieManager
 
         // final queue flush と scan end ログをまとめ、フォルダ単位の終端処理を読みやすくする。
         private async Task<(
-            bool ShouldBreakByUiSuppression,
+            WatchLoopDecision Decision,
             long UpdatedEnqueueFlushTotalMs
         )> TryCompleteWatchFolderAsync(
             WatchFolderScanContext folderScanContext,
@@ -701,7 +701,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                return (true, enqueueFlushTotalMs);
+                return (new WatchLoopDecision(false, true), enqueueFlushTotalMs);
             }
 
             await WriteWatchFolderScanEndAsync(
@@ -715,7 +715,7 @@ namespace IndigoMovieManager
                 uiReflectTotalMs,
                 enqueueFlushTotalMs
             );
-            return (false, enqueueFlushTotalMs);
+            return (new WatchLoopDecision(false, false), enqueueFlushTotalMs);
         }
 
         // 走査ループ後の abort 判定と完了処理をまとめ、Watcher 本体の末尾を素直にする。

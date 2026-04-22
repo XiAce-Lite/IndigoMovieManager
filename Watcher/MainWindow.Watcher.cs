@@ -414,7 +414,7 @@ namespace IndigoMovieManager
                     enqueueFlushTotalMs
                 );
                 if (
-                    TryHandleWatchLoopDecisionWithBreak(
+                    TryApplyWatchFinalQueueFlushDecision(
                         finalQueueFlushDecision,
                         ref watchStoppedByUiSuppression,
                         out bool shouldBreakByFinalQueueFlush
@@ -513,6 +513,20 @@ namespace IndigoMovieManager
         {
             return TryHandleWatchLoopDecisionWithBreak(
                 pendingFlushDecision,
+                ref watchStoppedByUiSuppression,
+                out shouldBreakByUiSuppression
+            );
+        }
+
+        // final queue flush の decision 適用も 1 入口へ寄せ、終盤の読み筋を揃える。
+        private bool TryApplyWatchFinalQueueFlushDecision(
+            WatchLoopDecision finalQueueFlushDecision,
+            ref bool watchStoppedByUiSuppression,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            return TryHandleWatchLoopDecisionWithBreak(
+                finalQueueFlushDecision,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
             );

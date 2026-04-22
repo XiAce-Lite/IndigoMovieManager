@@ -283,15 +283,15 @@ namespace IndigoMovieManager
                     }
 
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
-                    WatchLoopDecision movieLoopDecision =
-                        await TryProcessWatchFolderMovieLoopAsync();
-                    if (
-                        TryApplyWatchLoopDecision(
-                            movieLoopDecision,
-                            ref watchStoppedByUiSuppression,
-                            out bool shouldBreakByMovieLoop
-                        )
-                    )
+                    (
+                        bool shouldReturnByMovieLoop,
+                        bool shouldBreakByMovieLoop,
+                        watchStoppedByUiSuppression
+                    ) = await AwaitAndApplyWatchLoopDecisionAsync(
+                        TryProcessWatchFolderMovieLoopAsync(),
+                        watchStoppedByUiSuppression
+                    );
+                    if (shouldReturnByMovieLoop)
                     {
                         return;
                     }
@@ -334,15 +334,15 @@ namespace IndigoMovieManager
                         return new WatchLoopDecision(false, shouldBreakByUiSuppression);
                     }
 
-                    WatchLoopDecision pendingFlushDecision =
-                        await TryFlushWatchPendingMoviesAsync();
-                    if (
-                        TryApplyWatchLoopDecision(
-                            pendingFlushDecision,
-                            ref watchStoppedByUiSuppression,
-                            out bool shouldBreakByPendingFlush
-                        )
-                    )
+                    (
+                        bool shouldReturnByPendingFlush,
+                        bool shouldBreakByPendingFlush,
+                        watchStoppedByUiSuppression
+                    ) = await AwaitAndApplyWatchLoopDecisionAsync(
+                        TryFlushWatchPendingMoviesAsync(),
+                        watchStoppedByUiSuppression
+                    );
+                    if (shouldReturnByPendingFlush)
                     {
                         return;
                     }
@@ -517,6 +517,30 @@ namespace IndigoMovieManager
                 uiReflectTotalMs,
                 enqueueFlushTotalMs,
                 watchStoppedByUiSuppression
+            );
+        }
+
+        // 非同期で得た WatchLoopDecision をその場で適用し、中盤の await 後分岐を揃える。
+        private async Task<(
+            bool ShouldReturn,
+            bool ShouldBreakByUiSuppression,
+            bool UpdatedWatchStoppedByUiSuppression
+        )> AwaitAndApplyWatchLoopDecisionAsync(
+            Task<WatchLoopDecision> decisionTask,
+            bool watchStoppedByUiSuppression
+        )
+        {
+            WatchLoopDecision decision = await decisionTask;
+            bool updatedWatchStoppedByUiSuppression = watchStoppedByUiSuppression;
+            bool shouldReturn = TryApplyWatchLoopDecision(
+                decision,
+                ref updatedWatchStoppedByUiSuppression,
+                out bool shouldBreakByUiSuppression
+            );
+            return (
+                shouldReturn,
+                shouldBreakByUiSuppression,
+                updatedWatchStoppedByUiSuppression
             );
         }
 

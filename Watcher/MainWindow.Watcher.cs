@@ -417,11 +417,16 @@ namespace IndigoMovieManager
                     uiReflectTotalMs,
                     enqueueFlushTotalMs
                 );
-                TryHandleWatchLoopDecisionWithBreak(
-                    finalQueueFlushDecision,
-                    ref watchStoppedByUiSuppression,
-                    out bool shouldBreakByFinalQueueFlush
-                );
+                if (
+                    TryHandleWatchLoopDecisionWithBreak(
+                        finalQueueFlushDecision,
+                        ref watchStoppedByUiSuppression,
+                        out bool shouldBreakByFinalQueueFlush
+                    )
+                )
+                {
+                    return;
+                }
                 if (shouldBreakByFinalQueueFlush)
                 {
                     break;

@@ -389,17 +389,12 @@ namespace IndigoMovieManager
                     canUseQueryOnlyWatchReload = false;
                 }
 
-                if (watchStoppedByUiSuppression)
-                {
-                    break;
-                }
-
                 (
-                    bool shouldReturnByFinalQueueFlush,
-                    bool shouldBreakByFinalQueueFlush,
+                    bool shouldReturnByCurrentFolderCompletion,
+                    bool shouldBreakByCurrentFolderCompletion,
                     watchStoppedByUiSuppression,
                     enqueueFlushTotalMs
-                ) = await TryCompleteCurrentWatchFolderAsync(
+                ) = await TryFinishCurrentWatchFolderAsync(
                     folderScanContext,
                     checkFolder,
                     addedByFolderCount,
@@ -412,11 +407,11 @@ namespace IndigoMovieManager
                     enqueueFlushTotalMs,
                     watchStoppedByUiSuppression
                 );
-                if (shouldReturnByFinalQueueFlush)
+                if (shouldReturnByCurrentFolderCompletion)
                 {
                     return;
                 }
-                if (shouldBreakByFinalQueueFlush)
+                if (shouldBreakByCurrentFolderCompletion)
                 {
                     break;
                 }
@@ -499,6 +494,46 @@ namespace IndigoMovieManager
         }
 
         // フォルダ終端の complete と decision 適用を 1 入口へ寄せ、終盤の読み筋を揃える。
+        private async Task<(
+            bool ShouldReturn,
+            bool ShouldBreakByUiSuppression,
+            bool UpdatedWatchStoppedByUiSuppression,
+            long UpdatedEnqueueFlushTotalMs
+        )> TryFinishCurrentWatchFolderAsync(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            int addedByFolderCount,
+            bool useIncrementalUiMode,
+            long scanBackgroundElapsedMs,
+            long movieInfoTotalMs,
+            long dbLookupTotalMs,
+            long dbInsertTotalMs,
+            long uiReflectTotalMs,
+            long enqueueFlushTotalMs,
+            bool watchStoppedByUiSuppression
+        )
+        {
+            if (watchStoppedByUiSuppression)
+            {
+                return (false, true, true, enqueueFlushTotalMs);
+            }
+
+            return await TryCompleteCurrentWatchFolderAsync(
+                folderScanContext,
+                checkFolder,
+                addedByFolderCount,
+                useIncrementalUiMode,
+                scanBackgroundElapsedMs,
+                movieInfoTotalMs,
+                dbLookupTotalMs,
+                dbInsertTotalMs,
+                uiReflectTotalMs,
+                enqueueFlushTotalMs,
+                watchStoppedByUiSuppression
+            );
+        }
+
+        // フォルダ終端の suppression break と complete を 1 入口へ寄せ、終盤の分岐を揃える。
         private async Task<(
             bool ShouldReturn,
             bool ShouldBreakByUiSuppression,

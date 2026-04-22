@@ -298,7 +298,7 @@ namespace IndigoMovieManager
                     WatchLoopDecision movieLoopDecision =
                         await TryProcessWatchFolderMovieLoopAsync();
                     if (
-                        TryApplyWatchFolderMovieLoopDecision(
+                        TryApplyWatchLoopDecision(
                             movieLoopDecision,
                             ref watchStoppedByUiSuppression,
                             out bool shouldBreakByMovieLoop
@@ -349,7 +349,7 @@ namespace IndigoMovieManager
                     WatchLoopDecision pendingFlushDecision =
                         await TryFlushWatchPendingMoviesAsync();
                     if (
-                        TryApplyWatchPendingFlushDecision(
+                        TryApplyWatchLoopDecision(
                             pendingFlushDecision,
                             ref watchStoppedByUiSuppression,
                             out bool shouldBreakByPendingFlush
@@ -482,43 +482,16 @@ namespace IndigoMovieManager
             );
         }
 
-        // movie loop の decision 適用を 1 入口へ寄せ、中盤の見通しを揃える。
-        private bool TryApplyWatchFolderMovieLoopDecision(
-            WatchLoopDecision movieLoopDecision,
+        // movie loop / pending flush / final flush の decision 適用を共通化し、
+        // Watcher 本体の読み筋を同じ形へ揃える。
+        private bool TryApplyWatchLoopDecision(
+            WatchLoopDecision decision,
             ref bool watchStoppedByUiSuppression,
             out bool shouldBreakByUiSuppression
         )
         {
             return TryHandleWatchLoopDecisionWithBreak(
-                movieLoopDecision,
-                ref watchStoppedByUiSuppression,
-                out shouldBreakByUiSuppression
-            );
-        }
-
-        // pending flush の decision 適用も 1 入口へ寄せ、中盤の読み筋を movie loop と揃える。
-        private bool TryApplyWatchPendingFlushDecision(
-            WatchLoopDecision pendingFlushDecision,
-            ref bool watchStoppedByUiSuppression,
-            out bool shouldBreakByUiSuppression
-        )
-        {
-            return TryHandleWatchLoopDecisionWithBreak(
-                pendingFlushDecision,
-                ref watchStoppedByUiSuppression,
-                out shouldBreakByUiSuppression
-            );
-        }
-
-        // final queue flush の decision 適用も 1 入口へ寄せ、終盤の読み筋を揃える。
-        private bool TryApplyWatchFinalQueueFlushDecision(
-            WatchLoopDecision finalQueueFlushDecision,
-            ref bool watchStoppedByUiSuppression,
-            out bool shouldBreakByUiSuppression
-        )
-        {
-            return TryHandleWatchLoopDecisionWithBreak(
-                finalQueueFlushDecision,
+                decision,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
             );
@@ -561,7 +534,7 @@ namespace IndigoMovieManager
             );
 
             bool updatedWatchStoppedByUiSuppression = watchStoppedByUiSuppression;
-            bool shouldReturn = TryApplyWatchFinalQueueFlushDecision(
+            bool shouldReturn = TryApplyWatchLoopDecision(
                 finalQueueFlushDecision,
                 ref updatedWatchStoppedByUiSuppression,
                 out bool shouldBreakByUiSuppression

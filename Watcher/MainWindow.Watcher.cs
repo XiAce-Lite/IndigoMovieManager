@@ -354,7 +354,7 @@ namespace IndigoMovieManager
                     WatchLoopDecision pendingFlushDecision =
                         await TryFlushWatchPendingMoviesAsync();
                     if (
-                        TryHandleWatchLoopDecisionWithBreak(
+                        TryApplyWatchPendingFlushDecision(
                             pendingFlushDecision,
                             ref watchStoppedByUiSuppression,
                             out bool shouldBreakByPendingFlush
@@ -499,6 +499,20 @@ namespace IndigoMovieManager
         {
             return TryHandleWatchLoopDecisionWithBreak(
                 movieLoopDecision,
+                ref watchStoppedByUiSuppression,
+                out shouldBreakByUiSuppression
+            );
+        }
+
+        // pending flush の decision 適用も 1 入口へ寄せ、中盤の読み筋を movie loop と揃える。
+        private bool TryApplyWatchPendingFlushDecision(
+            WatchLoopDecision pendingFlushDecision,
+            ref bool watchStoppedByUiSuppression,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            return TryHandleWatchLoopDecisionWithBreak(
+                pendingFlushDecision,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
             );

@@ -216,29 +216,12 @@ namespace IndigoMovieManager
                         canUseQueryOnlyWatchReload
                     );
 
-                    List<PendingMovieRegistration> pendingNewMovies = [];
-                    void RefreshVisibleMovieGate(string reason)
-                    {
-                        (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
-                            RefreshWatchVisibleMovieGate(
-                                mode == CheckMode.Watch,
-                                visibleMoviePaths,
-                                WatchVisibleOnlyQueueThreshold,
-                                snapshotTabIndex,
-                                () =>
-                                    TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
-                                        ? refreshedActiveCount
-                                        : (int?)null,
-                                restrictWatchWorkToVisibleMovies,
-                                currentWatchQueueActiveCount,
-                                reason
-                            );
-                    }
                     (
+                        List<PendingMovieRegistration> pendingNewMovies,
                         WatchPendingNewMovieFlushContext pendingMovieFlushContext,
                         WatchScannedMovieContext scannedMovieContext,
                         folderScanContext
-                    ) = BuildWatchFolderScanRuntimeContexts(
+                    ) = CreateWatchFolderRuntimeContexts(
                         mode,
                         snapshotDbFullPath,
                         snapshotTabIndex,
@@ -262,8 +245,7 @@ namespace IndigoMovieManager
                         sub,
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
-                        pendingNewMovies,
-                        RefreshVisibleMovieGate
+                        currentWatchQueueActiveCount
                     );
 
                     if (
@@ -524,6 +506,99 @@ namespace IndigoMovieManager
             {
                 return;
             }
+        }
+
+        // 1フォルダ走査で使う context 初期化を 1 入口へ寄せ、Watcher 本体は流れを追いやすくする。
+        private (
+            List<PendingMovieRegistration> PendingNewMovies,
+            WatchPendingNewMovieFlushContext PendingMovieFlushContext,
+            WatchScannedMovieContext ScannedMovieContext,
+            WatchFolderScanContext FolderScanContext
+        ) CreateWatchFolderRuntimeContexts(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            int snapshotTabIndex,
+            long snapshotWatchScanScopeStamp,
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath,
+            HashSet<string> existingViewMoviePaths,
+            HashSet<string> displayedMoviePaths,
+            string searchKeyword,
+            bool allowViewConsistencyRepair,
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            string scanStrategy,
+            bool hasIncrementalCursor,
+            bool allowMissingTabAutoEnqueue,
+            int? autoEnqueueTabIndex,
+            string thumbnailOutPath,
+            HashSet<string> existingThumbnailFileNames,
+            HashSet<string> openRescueRequestKeys,
+            List<QueueObj> addFilesByFolder,
+            string checkFolder,
+            bool sub,
+            bool restrictWatchWorkToVisibleMovies,
+            HashSet<string> visibleMoviePaths,
+            int currentWatchQueueActiveCount
+        )
+        {
+            List<PendingMovieRegistration> pendingNewMovies = [];
+
+            void RefreshVisibleMovieGate(string reason)
+            {
+                (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                    RefreshWatchVisibleMovieGate(
+                        mode == CheckMode.Watch,
+                        visibleMoviePaths,
+                        WatchVisibleOnlyQueueThreshold,
+                        snapshotTabIndex,
+                        () =>
+                            TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
+                                ? refreshedActiveCount
+                                : (int?)null,
+                        restrictWatchWorkToVisibleMovies,
+                        currentWatchQueueActiveCount,
+                        reason
+                    );
+            }
+
+            (
+                WatchPendingNewMovieFlushContext pendingMovieFlushContext,
+                WatchScannedMovieContext scannedMovieContext,
+                WatchFolderScanContext folderScanContext
+            ) = BuildWatchFolderScanRuntimeContexts(
+                mode,
+                snapshotDbFullPath,
+                snapshotTabIndex,
+                snapshotWatchScanScopeStamp,
+                existingMovieByPath,
+                existingViewMoviePaths,
+                displayedMoviePaths,
+                searchKeyword,
+                allowViewConsistencyRepair,
+                useIncrementalUiMode,
+                canUseQueryOnlyWatchReload,
+                scanStrategy,
+                hasIncrementalCursor,
+                allowMissingTabAutoEnqueue,
+                autoEnqueueTabIndex,
+                thumbnailOutPath,
+                existingThumbnailFileNames,
+                openRescueRequestKeys,
+                addFilesByFolder,
+                checkFolder,
+                sub,
+                restrictWatchWorkToVisibleMovies,
+                visibleMoviePaths,
+                pendingNewMovies,
+                RefreshVisibleMovieGate
+            );
+
+            return (
+                pendingNewMovies,
+                pendingMovieFlushContext,
+                scannedMovieContext,
+                folderScanContext
+            );
         }
 
         // 最終 UI 反映から rescue / poll 記録 / end ログまでを 1 入口へまとめ、走査全体の締めを読みやすくする。

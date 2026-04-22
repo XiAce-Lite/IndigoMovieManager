@@ -1,6 +1,6 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-22
+最終更新日: 2026-04-23
 
 変更概要:
 - 文書の主軸を `rescue` や個別機能の列挙ではなく、`Watcher / UI差分反映` 主導の実行レーンへ組み替えた
@@ -46,6 +46,9 @@
 - `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で解く方針を固定した。無通信 timer は shutdown 専用 safety fuse としてのみ扱う
 - `Watcher.cs` は入口と中盤の `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口判定を helper / policy 側へ寄せ続け、`CheckFolderAsync(...)` を orchestration 専念へさらに寄せた
 - `Everything poll` は watch folder snapshot、eligible 判定再利用、重複 path 除去、low-update 時の間隔延長まで入り、通常周回の CPU / wakeup コストを下げ始めた
+- `Watcher.cs` はさらに、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`folder completion`、`run finish`、`folder failure recovery result` を helper / runtime 側へ寄せ、入口・中盤・終端を段単位で薄くした
+- `WatchLoopDecision` を `movie loop` と `pending flush` の共通戻り値へ揃え、`return / break / continue` の flow を同じ読み筋で追える形へ寄せた
+- `scan strategy 通知` と `scan mode 診断` は runtime 側で束ね、`Watcher.cs` 側は orchestration と通知入口に専念する形へ整理した
 
 ## 1. 目的
 
@@ -159,7 +162,7 @@
 - `Watcher/MainWindow.Watcher.cs` から、scope / background scan / last sync / thumbnail queue / UI suppression / deferred scan / rescue / DTO の塊を partial へ切り出し続ける。
 - `CheckFolderAsync(...)` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を coordinator / policy / runtime へ寄せる。
 - `QueueCheckFolderAsync(...)` と `ProcessCheckFolderQueueAsync(...)` の入口を薄くし、mode 圧縮や dispatcher 判断を専用 helper へ寄せる。
-- 直近到達点として、`watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` は helper / policy 1 呼び出しへまとめ終わっている。次は `RefreshVisibleMovieGate(...)` のローカル関数と runtime context 生成前後の局所関数をさらに減らす。
+- 直近到達点として、`watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` に加え、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`run finish`、`folder failure recovery result` も helper / runtime 1 呼び出しへ寄せ終わっている。次は runtime context 生成後の小粒な受け渡しと `final dispatch` 手前の局所分岐をさらに減らす。
 
 完了条件:
 - `Watcher.cs` の責務を短く説明できる。
@@ -293,7 +296,7 @@
 ### Step 1
 
 - `Watcher.cs` に残っている入口責務を棚卸しし、`queue orchestration`、`folder orchestration`、`final dispatch` 以外を外へ出す。
-- 直近では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口の小粒 helper 化まで進んだ。次は runtime context 組み立て前後の局所関数整理へ進む。
+- 直近では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口だけでなく、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`run finish` まで helper 化が進んだ。次は runtime context 組み立て後の小粒な受け渡し整理へ進む。
 
 ### Step 2
 

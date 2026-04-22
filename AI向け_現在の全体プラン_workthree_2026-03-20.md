@@ -1,6 +1,6 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-22
+最終更新日: 2026-04-23
 
 変更概要:
 - 全体計画を `rescue` 主導から `Watcher / UI差分反映` 主導へ再構成した
@@ -44,6 +44,9 @@
 - DB 施策は「先頭の決定打」ではなく「第2群の土台施策」と位置づけ直し、単一ライター / cache / shutdown の固定ルールを追加
 - `Watcher.cs` の入口・中盤・終端に残っていた `visible gate / scan strategy detail / watch table load failure / full reconcile` の直書きをさらに helper / policy 側へ寄せ、`CheckFolderAsync(...)` を orchestration 専念へ寄せ続けている
 - `Everything poll` は low-update 時の間隔延長、watch folder snapshot、eligible 判定再利用、重複 path 除去まで入り、通常周回の判定コストを一段落とした
+- `Watcher.cs` はさらに、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`folder completion`、`run finish`、`folder failure recovery result` を helper / runtime 側へ寄せ、入口・中盤・終端を段単位で薄くした
+- `Watcher` の flow 制御は `WatchLoopDecision` を共通の戻り値として揃え、`return / break / continue` の判定を helper 経由で追える形へ寄せた
+- `scan strategy 通知` と `scan mode 診断` は runtime 側で束ね、`Watcher.cs` 側は通知実行の入口だけを見る形へ整理した
 - `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で直す方針を固定した。無通信 timer は shutdown safety fuse としてのみ扱う
 
 ## 1. この文書の目的
@@ -113,6 +116,7 @@
 - Watcher は `Created` / `Renamed` のイベント入口を共通 queue 化し、watch event queue / UI bridge / MainDB writer / rename bridge / registration へ責務分離を開始済み
 - `Watcher.cs` から、watch policy / helper だけでなく runtime 側の塊も順次 partial へ切り出し始めている
 - `Watcher.cs` の入口では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` の引数組み立てを順次内側へ寄せ、`CheckFolderAsync(...)` の読み筋をさらに薄くしている
+- `Watcher.cs` はさらに `context 初期化`、`background scan`、`movie loop`、`pending flush`、`folder 終端`、`run finish`、`folder failure recovery` を helper / runtime 側へ寄せ、`CheckFolderAsync(...)` の直列処理を段ごとに読める形へ近づけている
 - `skin` 切り替えでは、重さの主因が `refresh` 二重化 / stale 判定後ろ倒し / catalog 再走査 / WebView2 再 navigate に寄っていることを確認済み
 
 ただし、いまの本線は rescue を先頭テーマとして広げる段階ではない。最上位優先は `Watcher / UI差分反映` と起動テンポ改善であり、rescue はその副作用を増やさない維持レーンとして扱う。
@@ -206,10 +210,12 @@
 - `CheckFolderAsync` 内の `pendingNewMovies` flush は `WatchScanCoordinator` へ移し、`MainDB登録 -> 小規模UI反映 -> enqueue` の塊を本流から外し始めた
 - `CheckFolderAsync` 内の per-file `new/existing` 分岐も `ProcessScannedMovieAsync(...)` として `WatchScanCoordinator` へ寄せ始めた
 - `CheckFolderAsync` の入口では `watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` を helper / policy 1 呼び出しへまとめ、`Watcher.cs` 側の引数直書きと一時変数をさらに減らした
+- `CheckFolderAsync` の入口・中盤・終端では、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`final queue flush`、`run finish`、`folder failure recovery result` も helper / runtime 1 呼び出しへ寄せ、`Watcher.cs` 側の直書きと局所 if をさらに減らした
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
 - rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった
 - さらに `Watcher.cs` から、scope / background scan / last sync I/O / thumbnail queue helper / UI suppression runtime / deferred scan runtime / scan strategy / rescue runtime / scan DTO を partial へ切り出し始めた
+- さらに `WatchLoopDecision` を `movie loop` と `pending flush` の共通戻り値として使い、`return / UI suppression で break / continue` を同じ流れで読めるようにした
 - `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie では cheap な file 属性差分を `DirtyFields` として局所更新へ流せるようになった
 - query-only 局所更新では `ObservedState` を `MovieRecords` へ先に当ててから filter / sort 判定へ進め、DB 再読込なしでも `file_date / movie_size` 変更が反映されるようになった
 - さらに query-only incremental watch 中で、cheap 差分または DB length 未確定の時だけ metadata probe を許し、watch existing movie の `MovieLength` 変更も局所更新へ流せるようになった
@@ -228,7 +234,7 @@
 
 ### 7.2 Phase 4 の次の着手順
 
-1. `CheckFolderAsync` に残る `RefreshVisibleMovieGate(...)` ローカル関数、runtime context 生成まわりの局所関数、`final dispatch` 手前の小さな分岐を、テンポを落とさない範囲でさらに外へ出す
+1. `CheckFolderAsync` にまだ残る小粒のローカル関数、runtime context 生成後の引数受け渡し、`final dispatch` 手前の局所分岐を、テンポを落とさない範囲でさらに外へ出す
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
   現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる

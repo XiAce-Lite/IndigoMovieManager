@@ -25,6 +25,13 @@ namespace IndigoMovieManager
             DropStaleScope = 2,
         }
 
+        private enum WatchLoopFlowAction
+        {
+            Continue = 0,
+            Return = 1,
+            BreakByUiSuppression = 2,
+        }
+
         // watch 中の UI 仕事は、実行直前でも suppression を見直す。
         private static bool IsWatchWorkSuppressed(Func<bool> shouldSuppressWatchWork)
         {
@@ -49,6 +56,45 @@ namespace IndigoMovieManager
             return IsWatchWorkSuppressed(shouldSuppressWatchWork)
                 ? WatchCoordinatorGuardAction.DeferByUiSuppression
                 : WatchCoordinatorGuardAction.Continue;
+        }
+
+        // movie loop / pending flush の戻り値判定を共通化し、Watcher 側の同型 if を減らす。
+        private static WatchLoopFlowAction ResolveWatchLoopFlowAction(
+            bool shouldReturn,
+            bool shouldBreakByUiSuppression
+        )
+        {
+            if (shouldReturn)
+            {
+                return WatchLoopFlowAction.Return;
+            }
+
+            return shouldBreakByUiSuppression
+                ? WatchLoopFlowAction.BreakByUiSuppression
+                : WatchLoopFlowAction.Continue;
+        }
+
+        private static bool TryHandleWatchLoopFlowAction(
+            bool shouldReturn,
+            bool shouldBreakByUiSuppression,
+            ref bool watchStoppedByUiSuppression
+        )
+        {
+            WatchLoopFlowAction action = ResolveWatchLoopFlowAction(
+                shouldReturn,
+                shouldBreakByUiSuppression
+            );
+            if (action == WatchLoopFlowAction.Return)
+            {
+                return true;
+            }
+
+            if (action == WatchLoopFlowAction.BreakByUiSuppression)
+            {
+                watchStoppedByUiSuppression = true;
+            }
+
+            return false;
         }
 
         // watch のスコープ一致判定は、走査調停側で完結させる。

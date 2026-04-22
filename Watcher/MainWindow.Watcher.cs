@@ -306,16 +306,16 @@ namespace IndigoMovieManager
                         bool shouldReturnByMovieLoop,
                         bool shouldBreakMovieLoopByCurrentUiSuppression
                     ) = await TryProcessWatchFolderMovieLoopAsync();
-                    if (shouldReturnByMovieLoop)
+                    if (
+                        TryHandleWatchLoopFlowAction(
+                            shouldReturnByMovieLoop,
+                            shouldBreakMovieLoopByCurrentUiSuppression,
+                            ref watchStoppedByUiSuppression
+                        )
+                    )
                     {
                         return;
                     }
-                    if (shouldBreakMovieLoopByCurrentUiSuppression)
-                    {
-                        watchStoppedByUiSuppression = true;
-                        break;
-                    }
-
                     if (watchStoppedByUiSuppression)
                     {
                         break;
@@ -362,13 +362,18 @@ namespace IndigoMovieManager
                         bool shouldReturnByPendingFlush,
                         bool shouldBreakByPendingFlush
                     ) = await TryFlushWatchPendingMoviesAsync();
-                    if (shouldReturnByPendingFlush)
+                    if (
+                        TryHandleWatchLoopFlowAction(
+                            shouldReturnByPendingFlush,
+                            shouldBreakByPendingFlush,
+                            ref watchStoppedByUiSuppression
+                        )
+                    )
                     {
                         return;
                     }
-                    if (shouldBreakByPendingFlush)
+                    if (watchStoppedByUiSuppression)
                     {
-                        watchStoppedByUiSuppression = true;
                         break;
                     }
                 }

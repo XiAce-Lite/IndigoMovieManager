@@ -45,6 +45,36 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleWatchLoopFlowAction_return時は即returnする()
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryHandleWatchLoopFlowAction",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        object[] args = [true, false, false];
+
+        bool shouldReturn = (bool)method.Invoke(null, args)!;
+
+        Assert.That(shouldReturn, Is.True);
+        Assert.That((bool)args[2], Is.False);
+    }
+
+    [Test]
+    public void TryHandleWatchLoopFlowAction_ui抑止時はbreakだけ立てる()
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryHandleWatchLoopFlowAction",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        object[] args = [false, true, false];
+
+        bool shouldReturn = (bool)method.Invoke(null, args)!;
+
+        Assert.That(shouldReturn, Is.False);
+        Assert.That((bool)args[2], Is.True);
+    }
+
+    [Test]
     public void ApplyWatchScannedMovieProcessResult_計測値とchanged_movieをまとめて反映する()
     {
         MainWindow.WatchScannedMovieProcessResult processResult = new()

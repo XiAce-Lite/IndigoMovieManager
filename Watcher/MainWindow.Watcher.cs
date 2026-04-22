@@ -263,18 +263,6 @@ namespace IndigoMovieManager
                                 reason
                             );
                     }
-                    bool ShouldSuppressCurrentWork()
-                    {
-                        return ShouldSuppressCurrentWatchWork(mode);
-                    }
-                    bool IsCurrentOrManualScope()
-                    {
-                        return IsCurrentOrManualWatchScope(
-                            mode,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp
-                        );
-                    }
                     (
                         WatchPendingNewMovieFlushContext pendingMovieFlushContext,
                         WatchScannedMovieContext scannedMovieContext,
@@ -304,9 +292,7 @@ namespace IndigoMovieManager
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
                         pendingNewMovies,
-                        RefreshVisibleMovieGate,
-                        ShouldSuppressCurrentWork,
-                        IsCurrentOrManualScope
+                        RefreshVisibleMovieGate
                     );
 
                     if (

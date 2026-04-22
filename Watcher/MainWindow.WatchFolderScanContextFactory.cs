@@ -138,7 +138,9 @@ namespace IndigoMovieManager
 
         // pending flush 用の依存をまとめ、走査入口の object initializer を薄くする。
         private WatchPendingNewMovieFlushContext CreateWatchPendingNewMovieFlushContext(
+            CheckMode mode,
             string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
             Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath,
             List<PendingMovieRegistration> pendingNewMovies,
             bool useIncrementalUiMode,
@@ -149,9 +151,7 @@ namespace IndigoMovieManager
             HashSet<string> openRescueRequestKeys,
             List<QueueObj> addFilesByFolder,
             string checkFolder,
-            Action<string> refreshWatchVisibleMovieGate,
-            Func<bool> shouldSuppressWatchWork,
-            Func<bool> isCurrentWatchScanScope
+            Action<string> refreshWatchVisibleMovieGate
         )
         {
             return new WatchPendingNewMovieFlushContext
@@ -168,8 +168,14 @@ namespace IndigoMovieManager
                 AddFilesByFolder = addFilesByFolder,
                 CheckFolder = checkFolder,
                 RefreshWatchVisibleMovieGate = refreshWatchVisibleMovieGate,
-                ShouldSuppressWatchWork = shouldSuppressWatchWork,
-                IsCurrentWatchScanScope = isCurrentWatchScanScope,
+                ShouldSuppressWatchWork = () =>
+                    ShouldSuppressWatchWorkByUi(
+                        IsWatchSuppressedByUi(),
+                        mode == CheckMode.Watch
+                    ),
+                IsCurrentWatchScanScope = () =>
+                    mode != CheckMode.Watch
+                    || IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp),
                 MarkWatchWorkDeferredWhileSuppressedAction =
                     MarkWatchWorkDeferredWhileSuppressed,
                 InsertMoviesBatchAsync = InsertMoviesToMainDbBatchAsync,
@@ -294,14 +300,14 @@ namespace IndigoMovieManager
             bool restrictWatchWorkToVisibleMovies,
             HashSet<string> visibleMoviePaths,
             List<PendingMovieRegistration> pendingNewMovies,
-            Action<string> refreshWatchVisibleMovieGate,
-            Func<bool> shouldSuppressWatchWork,
-            Func<bool> isCurrentWatchScanScope
+            Action<string> refreshWatchVisibleMovieGate
         )
         {
             WatchPendingNewMovieFlushContext pendingMovieFlushContext =
                 CreateWatchPendingNewMovieFlushContext(
+                    mode,
                     snapshotDbFullPath,
+                    snapshotWatchScanScopeStamp,
                     existingMovieByPath,
                     pendingNewMovies,
                     useIncrementalUiMode,
@@ -312,9 +318,7 @@ namespace IndigoMovieManager
                     openRescueRequestKeys,
                     addFilesByFolder,
                     checkFolder,
-                    refreshWatchVisibleMovieGate,
-                    shouldSuppressWatchWork,
-                    isCurrentWatchScanScope
+                    refreshWatchVisibleMovieGate
                 );
             WatchScannedMovieContext scannedMovieContext = CreateWatchScannedMovieContext(
                 snapshotDbFullPath,

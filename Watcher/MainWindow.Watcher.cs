@@ -240,10 +240,7 @@ namespace IndigoMovieManager
                                     checkFolder,
                                     scanResult.NewMoviePaths.Skip(movieIndex)
                                 );
-                            if (
-                                movieLoopGuardDecision.ShouldReturn
-                                || movieLoopGuardDecision.ShouldBreakByUiSuppression
-                            )
+                            if (ShouldExitWatchFolderMovieLoop(movieLoopGuardDecision))
                             {
                                 return movieLoopGuardDecision;
                             }
@@ -550,6 +547,12 @@ namespace IndigoMovieManager
             }
 
             return new WatchLoopDecision(false, shouldBreakByUiSuppression);
+        }
+
+        // movie loop 先頭の flow 判定を helper 化し、Watcher 本体の条件直書きを減らす。
+        private static bool ShouldExitWatchFolderMovieLoop(WatchLoopDecision decision)
+        {
+            return decision.ShouldReturn || decision.ShouldBreakByUiSuppression;
         }
 
         // 1フォルダ走査で使う context 初期化を 1 入口へ寄せ、Watcher 本体は流れを追いやすくする。

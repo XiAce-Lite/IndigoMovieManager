@@ -198,15 +198,17 @@ namespace IndigoMovieManager
                         canUseQueryOnlyWatchReload
                     );
 
-                    if (
-                        TryPrepareWatchFolderMovieLoop(
-                            folderScanContext,
-                            checkFolder,
-                            scanResult.NewMoviePaths,
-                            ref watchStoppedByUiSuppression,
-                            out bool shouldBreakByMovieLoopPreparation
-                        )
-                    )
+                    (
+                        bool shouldReturnByMovieLoopPreparation,
+                        bool shouldBreakByMovieLoopPreparation,
+                        watchStoppedByUiSuppression
+                    ) = TryBeginWatchFolderMovieLoop(
+                        folderScanContext,
+                        checkFolder,
+                        scanResult.NewMoviePaths,
+                        watchStoppedByUiSuppression
+                    );
+                    if (shouldReturnByMovieLoopPreparation)
                     {
                         return;
                     }
@@ -462,6 +464,33 @@ namespace IndigoMovieManager
                 movieLoopPreparation,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
+            );
+        }
+
+        // movie loop 開始前の準備と decision 適用を 1 入口へ寄せ、中盤の読み筋を揃える。
+        private (
+            bool ShouldReturn,
+            bool ShouldBreakByUiSuppression,
+            bool UpdatedWatchStoppedByUiSuppression
+        ) TryBeginWatchFolderMovieLoop(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            List<string> newMoviePaths,
+            bool watchStoppedByUiSuppression
+        )
+        {
+            bool updatedWatchStoppedByUiSuppression = watchStoppedByUiSuppression;
+            bool shouldReturn = TryPrepareWatchFolderMovieLoop(
+                folderScanContext,
+                checkFolder,
+                newMoviePaths,
+                ref updatedWatchStoppedByUiSuppression,
+                out bool shouldBreakByUiSuppression
+            );
+            return (
+                shouldReturn,
+                shouldBreakByUiSuppression,
+                updatedWatchStoppedByUiSuppression
             );
         }
 

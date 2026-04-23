@@ -1268,6 +1268,66 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task close開始後に遅延prepareが完了してもteardown競合で落ちない()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<bool> firstPrepareStarted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<bool> releaseFirstPrepare = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int firstPrepareGate = 0;
+
+            window.ExternalSkinHostPrepareAsyncForTesting = async (_, _) =>
+            {
+                if (Interlocked.CompareExchange(ref firstPrepareGate, 1, 0) == 0)
+                {
+                    firstPrepareStarted.TrySetResult(true);
+                    await releaseFirstPrepare.Task;
+                }
+
+                return true;
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    firstPrepareStarted.Task,
+                    TimeSpan.FromSeconds(10),
+                    "最初の host prepare 開始を待てませんでした。"
+                );
+
+                Task closeTask = CloseWindowAsync(window);
+                releaseFirstPrepare.TrySetResult(true);
+                await WaitAsync(
+                    closeTask,
+                    TimeSpan.FromSeconds(15),
+                    "close 中の host teardown 競合解消を待てませんでした。"
+                );
+            }
+            finally
+            {
+                releaseFirstPrepare.TrySetResult(true);
+                if (window.IsLoaded)
+                {
+                    await CloseWindowAsync(window);
+                }
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
     public async Task MinimalChromeのGridへ戻るで標準Gridへ復帰できる()
     {
         GridReturnSnapshot result = await RunOnStaDispatcherAsync(async () =>

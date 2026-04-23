@@ -34,6 +34,13 @@ namespace IndigoMovieManager
 
         internal void Queue(string reason, string requestTraceId = "")
         {
+            // 終了シーケンス中は新規 refresh を受け付けず、dispatcher shutdown 競合の例外を避ける。
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+            {
+                ResetPendingStateForShutdown();
+                return;
+            }
+
             isRefreshPending = true;
             pendingReason = reason ?? "";
             pendingRequestTraceId = requestTraceId ?? "";
@@ -44,10 +51,17 @@ namespace IndigoMovieManager
             }
 
             isRefreshRunning = true;
-            _ = dispatcher.BeginInvoke(
-                new Action(async () => await DrainAsync()),
-                DispatcherPriority.Background
-            );
+            try
+            {
+                _ = dispatcher.BeginInvoke(
+                    new Action(async () => await DrainAsync()),
+                    DispatcherPriority.Background
+                );
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TaskCanceledException)
+            {
+                ResetPendingStateForShutdown();
+            }
         }
 
         private async Task DrainAsync()
@@ -76,6 +90,14 @@ namespace IndigoMovieManager
                     Queue(pendingReason, pendingRequestTraceId);
                 }
             }
+        }
+
+        private void ResetPendingStateForShutdown()
+        {
+            isRefreshRunning = false;
+            isRefreshPending = false;
+            pendingReason = "";
+            pendingRequestTraceId = "";
         }
     }
 }

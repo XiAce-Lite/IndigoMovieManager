@@ -113,7 +113,7 @@ namespace IndigoMovieManager
                         new Action(() =>
                         {
                             HideOnOverlayThread();
-                            dispatcherToStop.BeginInvokeShutdown(DispatcherPriority.Send);
+                            RequestOverlayDispatcherShutdown(dispatcherToStop);
                         })
                     );
                 }
@@ -204,7 +204,7 @@ namespace IndigoMovieManager
 
             if (_stopRequested)
             {
-                currentDispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                RequestOverlayDispatcherShutdown(currentDispatcher);
             }
 
             Dispatcher.Run();
@@ -252,6 +252,28 @@ namespace IndigoMovieManager
             while (_pendingActions.TryDequeue(out Action action))
             {
                 action();
+            }
+        }
+
+        // dispatcher 停止済み/停止中なら何もしないで抜け、終了競合での例外伝播を防ぐ。
+        private static void RequestOverlayDispatcherShutdown(Dispatcher dispatcher)
+        {
+            if (
+                dispatcher == null
+                || dispatcher.HasShutdownStarted
+                || dispatcher.HasShutdownFinished
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TaskCanceledException)
+            {
+                // 終了競合だけなので何もしない。
             }
         }
 

@@ -29,7 +29,8 @@
 - `7fd9312` で close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused で固定した
 - `22cf0bd` では、テストハーネス側で `MissingSkin` sentinel の false 解決待ちを安定化し、runtime bridge 実 host の `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` を focused 2 件 green へ更新した
 - 2026-04-24 に `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green を確認し、runtime bridge 側の `Save後` 直列を未固定一覧から外した
-- ただし未固定の主戦場はまだ残るため、`runtime bridge` の bare / build出力 skin 4 本 / `umiFindTreeEve` の serial timeout と、MainWindow 側の一部 fail-fast 残差は継続監視する
+- 2026-04-24 に `umiFindTreeEve onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` も focused 2 件 green を確認し、runtime bridge 側の `umiFindTreeEve` 直列を未固定一覧から外した
+- ただし未固定の主戦場はまだ残るため、`runtime bridge` の bare `TagInputRelation` と build出力 skin 4 本の serial timeout、および MainWindow 側の一部 fail-fast 残差は継続監視する
 
 ## 1. 結論
 
@@ -529,13 +530,10 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
   - runtime bridge 側は green だが、MainWindow 側は focused 実行の teardown で `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざったため、まだ正本化しない
 - build 出力 skin 4 本の MainWindow 実 host における `onUpdateThum -> onSkinLeave/onClearAll -> Refresh()`
   - runtime bridge 側は green だが、MainWindow 側は focused 実行の teardown で `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざったため、まだ正本化しない
-- `TagInputRelation` の runtime bridge 実 host における `Save後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")`
-  - `failure 単体` と `success 単体` は green だが、直列では最初の `MissingSkin` 結果待ち自体が安定せず、まだ正本化しない
-- build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)`
-  - `failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout する
-  - いまは無理に押し込まず、専用調査対象として分離する
-- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave -> changeSkin("MissingSkin") -> changeSkin("#TagInputRelation")`
-  - `onSkinLeave -> MissingSkin(false)` の failure 単体と、`onSkinLeave -> TagInputRelation` の success 単体は green だが、直列では最初の `MissingSkin` 結果待ちが timeout するため、まだ正本化しない
+- build 出力 skin 4 本の runtime bridge における `tag / thumb 差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)`
+  - 2026-04-24 の focused 16 件で green を確認した
+  - 途中で見えていた timeout は runtime bridge 本体ではなく、テストハーネスが同一 async 連結のページ内変数で結果待ちしており、2 回目の `changeSkin(nextSkin)` 成功時のページ遷移で観測 state を消していたことが主因だった
+  - host 側の `messageId / request / resolve` 追跡へ寄せて観測を安定化し、runtime bridge 側の build 出力 skin 直列は未固定一覧から外した
 
 ### 12.4 再発防止
 
@@ -551,7 +549,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ただし「説明できる」は、すべてを対称に green 化する意味ではない。実測で非対称なら、その非対称を docs と test で正本化し、危険な直列遷移は未固定として分離できていることも完了条件に含める。
 
-## 13. 2026-04-23 時点の固定状況インデックス
+## 13. 2026-04-24 時点の固定状況インデックス
 
 補足:
 - この章はシナリオ名で整理している。実テスト名は日本語長名のため、1対1で完全一致しない場合がある。
@@ -561,6 +559,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、`runtime bridge` 実 host では `onClearAll/onSkinLeave -> 再入` による terminal rerender も正本化済み
+- build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、`runtime bridge` 実 host では `terminal -> MissingSkin -> success` 直列も focused 16 件 green で正本化済み
 - `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal failure (`onClearAll/onSkinLeave -> MissingSkin`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
@@ -585,7 +584,8 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - 2026-04-23 追記: `da6a22b` と `0a9fd64` で compat alias fallback と lifecycle pending 応答を補強したが、これは pending 解決の取りこぼし防止である。`MissingSkin -> success` 直列 timeout の未固定判定は維持する。
 - 2026-04-23 追記: `22cf0bd` ではテストハーネス側の `MissingSkin` sentinel 解決待ちを安定化し、`TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` は focused 2 件 green へ更新した。
-- 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green を確認した。runtime bridge 側の未固定は bare / build出力 skin 4 本 / `umiFindTreeEve` へ狭まった。
+- 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green を確認した。
+- 2026-04-24 追記: `umiFindTreeEve onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` も focused 2 件 green を確認した。runtime bridge 側の未固定は bare `TagInputRelation` へ狭まった。
 - `TagInputRelation` の runtime bridge 直列は、2026-04-23 時点で次の切り分けを正本とする
   - bare terminal: `failure` 単体 / `success` 単体は green、`MissingSkin -> #umlFindTreeEve` は timeout
   - `Get後`: `terminal -> success` / `terminal -> failure` / `terminal -> MissingSkin -> success` は green
@@ -593,11 +593,5 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - `TagInputRelation` の runtime bridge 実 host における bare terminal (`onClearAll/onSkinLeave`) 後の `MissingSkin -> #umlFindTreeEve` 直列は、2 件とも `umlFindTreeEve` 側の完了待ちが timeout するため未固定
 - 上記のうち `onClearAll -> MissingSkin -> #umlFindTreeEve` は、2026-04-22 に代表 1 ケースだけ再試行しても同じ timeout で再現したため、待機条件ではなく直列遷移そのものが未固定だと判断する
-- build 出力 skin 4 本の runtime bridge 実 host における `onUpdateThum -> onSkinLeave -> MissingSkin -> success` も、4 件とも 2 回目 `changeSkin` 完了待ちが timeout するため未固定
-- build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
-- 上記のうち `Search_table + onSkinLeave -> MissingSkin -> DefaultSmallWB` を代表 1 ケースだけ再試行しても、次 skin の tag baseline 復帰待ちが timeout したため、bundle 依存ではなく runtime bridge の serial timeout と判断する
-- さらに `Search_table + onClearAll -> MissingSkin -> DefaultSmallWB` も、`tag` 側は 2 回目 `changeSkin` 以前の `MissingSkin` 結果待ちから timeout し、`thumb` 側も `terminal MissingSkin` 結果待ちから timeout したため、`clear` でも `leave` と同様に runtime bridge の serial timeout が再現する
-- build 出力 skin 4 本の runtime bridge 直列は、2026-04-23 時点で `clear / leave` のどちらでも `MissingSkin -> success` が未固定とみなす
-  - `tag`: `Search_table` 代表ケースで `leave` は次 skin の baseline 復帰待ち、`clear` は `MissingSkin` 結果待ちから timeout
-  - `thumb`: `leave` は 2 回目 `changeSkin` 完了待ち、`clear` は `terminal MissingSkin` 結果待ちから timeout
-- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定
+- 2026-04-24 追記: build 出力 skin 4 本の runtime bridge 実 host における `onUpdateThum / onModifyTags -> onSkinLeave/onClearAll -> MissingSkin -> success` は、focused 16 件で green を確認した
+- 2026-04-24 追記: 途中で見えていた timeout は、テストハーネスが同一 async 連結のページ内観測変数へ依存し、2 回目 `changeSkin(nextSkin)` 成功時のページ遷移で state を自分で失っていたことが主因だった。host 側の `messageId / request / resolve` 追跡へ寄せて安定化したため、build 出力 skin 4 本は runtime bridge 側の未固定一覧から外す

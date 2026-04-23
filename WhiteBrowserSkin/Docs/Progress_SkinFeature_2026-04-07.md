@@ -6,7 +6,7 @@
 - 進捗評価: **Phase 1/2 の中核に加え、callback 互換の第一段、操作互換の第1段、host lifecycle の第2段階まで成立**。
 - 現在の意味: `SimpleGridWB` を動かすための最小互換から、`TutorialCallbackGrid` や `WhiteBrowserDefault*` fixture を視野に入れた legacy 互換層へ一段進み、選択 / lifecycle / scroll と host refresh の土台も実運用寄りになった。
 
-## 固定状況クイック判定 (2026-04-23)
+## 固定状況クイック判定 (2026-04-24)
 
 - このメモは、`更新メモ` の時系列ログより下で詳細を追う構成のため、まず本節で「固定済み/未固定」を先に判断する。
 - 判定基準:
@@ -16,9 +16,11 @@
   - 両実 host で固定済み: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` と `changeSkin success / failure` の主要境界。
     - `runtime bridge` 側は、`tag / thumb` の terminal rerender まで固定済み。
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
-  - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（bare の `TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-24 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
+  - runtime bridge 側が未固定: bare の `TagInputRelation` における `onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve`。build 出力 skin 4 本の `tag / thumb` 直列は、2026-04-24 に host 側追跡へ寄せた focused 16 件で green へ更新した。
 - 2026-04-23 追記: `da6a22b` の compat alias fallback 固定と `0a9fd64` の lifecycle pending 応答補強に加え、`22cf0bd` のテストハーネス側安定化で `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` が focused 2 件 green になった。
 - 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green になり、runtime bridge の `Save後` 直列は未固定一覧から外した。
+- 2026-04-24 追記: `umiFindTreeEve onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` も focused 2 件 green になり、runtime bridge の `umiFindTreeEve` 直列は未固定一覧から外した。
+- 2026-04-24 追記: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の runtime bridge 実 host における `onUpdateThum / onModifyTags -> onSkinLeave/onClearAll -> MissingSkin -> changeSkin(nextSkin)` も、host 側 `messageId / request / resolve` 追跡へ寄せた focused 16 件で green になった。途中で見えていた timeout は、同一 async 連結のページ内観測 state が 2 回目 navigate で消えていた test harness 側の観測問題だった。
 - 2026-04-23 追記: `7fd9312` で close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused green に更新した。MainWindow 側の未固定領域は「close 競合全般」ではなく、一部 exact シナリオの fail-fast 残差として読む。
 - 詳細の正本:
   - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-23 時点の固定状況インデックス」を正本として扱う。
@@ -601,7 +603,8 @@
 - 2026-04-22: `TagInputRelation` の runtime bridge 実 host における bare な `onSkinLeave/onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#umlFindTreeEve")` は、新規 2 件とも `umlFindTreeEve` 側の完了待ちが timeout した。`failure 単体` と `success 単体` は green でも、bare terminal の failure -> success 直列はまだ未固定として分離する。
 - 2026-04-22: `TagInputRelation` の runtime bridge 実 host における bare な `onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#umlFindTreeEve")` は、代表 1 ケースだけへ再度絞っても `umlFindTreeEve` 側の完了待ちが timeout した。bare terminal の failure -> success 直列は、束ね方ではなく直列遷移そのものが未固定だと判断する。
 - 2026-04-23: `22cf0bd` によりテストハーネス側の `MissingSkin` sentinel false 解決待ちを安定化し、runtime bridge 実 host の `TagInputRelation Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` は focused 2 件 green になった。`Get後` 直列は未固定一覧から外した。
-- 2026-04-24: `TagInputRelation` の runtime bridge 実 host における `Save後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` も focused 2 件 green になった。残る直列残差は bare / `umiFindTreeEve` / build 出力 skin 4 本へ絞って扱う。
+- 2026-04-24: `TagInputRelation` の runtime bridge 実 host における `Save後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` も focused 2 件 green になった。
+- 2026-04-24: `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#TagInputRelation")` も focused 2 件 green になった。残る直列残差は bare `TagInputRelation` へ絞って扱う。
 - 2026-04-23: `7fd9312` により close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused green で固定した。MainWindow 側 fail-fast は残るが、close 競合そのものと区別して読む。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> onSkinLeave/onClearAll -> wb.changeSkin("#TagInputRelation")` は、新規 2 件自体は通るものの focused 束の teardown で `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざった。runtime bridge 側は green だが、MainWindow 側はまだ未固定の success 境界として分離する。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> onSkinLeave -> Refresh() -> wb.changeSkin("#TagInputRelation")` は、さらに代表 1 ケースへ絞っても `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash で落ちた。focused 束だけの問題ではなく、MainWindow 側 teardown を含む未固定の success 境界として扱う。
@@ -613,13 +616,13 @@
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における `onRegistedFile -> onClearAll/onSkinLeave -> changeSkin("#TagInputRelation")` も、新規 assertion 自体は通ったが focused 実行終了時に `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざった。register 後 terminal success も MainWindow 側 teardown を含む未固定境界として分離する。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における bare な `onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#TagInputRelation")` も、近接 2 件は通るが focused 実行終了時に `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざった。bare terminal の failure -> success 直列も MainWindow 側 teardown を含む未固定境界として分離する。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における bare な `onSkinLeave -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#TagInputRelation")` も、近接 2 件は通るが focused 実行終了時に `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざった。bare terminal の failure -> success 直列は clear/leave の両方で MainWindow 側 teardown を含む未固定境界として扱う。
-- 2026-04-22: `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#TagInputRelation")` は、`failure 単体` と `success 単体` は green でも、直列では最初の `MissingSkin` 結果待ちが timeout する。直列遷移の未固定境界として分離して扱う。
 - 2026-04-22: build 出力 skin 4 本の runtime bridge 実 host における `onUpdateThum -> onSkinLeave -> wb.changeSkin("MissingSkin") -> wb.changeSkin(nextSkin)` は、新規 4 件とも 2 回目 `changeSkin` 完了待ちが timeout した。`thumb` 側も `tag` と同じく、runtime bridge の failure -> success 直列は未固定として分離する。
 - 2026-04-20: build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)` は、`failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout した。ここは未固定の直列境界として切り分け済み。
 - 2026-04-22: build 出力 skin 4 本の runtime bridge 実 host における `tag差分更新後 -> onSkinLeave -> wb.changeSkin("MissingSkin") -> wb.changeSkin(nextSkin)` は、`Search_table -> DefaultSmallWB` の代表 1 ケースへ絞っても、次 skin の tag baseline 復帰待ちが timeout した。`tag` 側の failure -> success 直列も bundle 依存ではなく、runtime bridge そのものの未固定境界として扱う。
 - 2026-04-23: `Search_table + onClearAll -> MissingSkin -> DefaultSmallWB` を代表 1 ケースへ絞っても、`tag` 側は 2 回目 `changeSkin` 以前の `MissingSkin` 結果待ちから timeout、`thumb` 側も `terminal MissingSkin` 結果待ちから timeout した。build 出力 skin 4 本の runtime bridge 直列 timeout は `leave` だけでなく `clear` でも再現すると判断する。
+- 2026-04-24: build 出力 skin 4 本の runtime bridge 実 host における `onUpdateThum / onModifyTags -> onSkinLeave/onClearAll -> MissingSkin -> changeSkin(nextSkin)` は、host 側 `messageId / request / resolve` 追跡へ寄せた helper で focused 16 件 green になった。timeout は runtime bridge 本体ではなく、同一 async 連結のページ内観測 state が 2 回目 navigate で消えていたことが主因だったため、build 出力 skin 4 本は runtime bridge 側の未固定一覧から外す。
 - 2026-04-19: runtime bridge 実 host では build 出力 skin 4 本の `onUpdateThum / onModifyTags` に対して、`onClearAll` または `onSkinLeave` を挟んで同一 skin へ再入しても、更新済み状態を持ち越さず初期 `thumb / tag` 表示へ戻ることを focused 16 件通過で確認した。build 出力 skin の terminal rerender は bridge 正本で揃っている。
-- 2026-04-22: 以後の残差整理を迷わないよう、固定状況の読み順を `両実 host で固定済み / MainWindow 側が未固定 / runtime bridge 側が未固定` の 3 区分へ再整理した。build 出力 skin 4 本の `tag / thumb` は `changeSkin` 系まで両実 host でかなり揃い、未固定の主戦場は `MainWindow fail-fast` と `runtime bridge の直列 timeout` に絞られている。
+- 2026-04-22: 以後の残差整理を迷わないよう、固定状況の読み順を `両実 host で固定済み / MainWindow 側が未固定 / runtime bridge 側が未固定` の 3 区分へ再整理した。2026-04-24 時点では build 出力 skin 4 本の `tag / thumb` は `MissingSkin -> success` 直列まで runtime bridge 側で揃い、未固定の主戦場は `MainWindow fail-fast` と bare `TagInputRelation` の直列 timeout へ狭まっている。
 - 2026-04-22: MainWindow 実 host で既存メソッドだけ存在して未実行だった `Search_table` の `onSkinEnter` profile 復元受け入れと、`DefaultSmallWB` の `addWhere` 再更新受け入れに `[Test]` を付け、focused 2 件通過で green を確認した。既存 docs 上の「確認済み」を実際の自動回帰へ昇格できた。
 - 2026-04-23: `da6a22b` で runtime bridge の compat dispatch を `primary(__immWbCompat)` 優先、壊れている場合は `alias(__immWbCompatBridge)` へ落とす形に固定した。compat 本体が壊れても `focusThum` の pending 解決を取りこぼさないことを focused で確認した。
 - 2026-04-23: `0a9fd64` で lifecycle focused テストの `getSelectThums` pending 応答を補い、不要な待機揺れを減らした。これはテスト側の pending 応答補強であり、`MissingSkin -> success` 直列 timeout（runtime bridge 未固定）と `MainWindow` 側 fail-fast 未固定は継続して扱う。

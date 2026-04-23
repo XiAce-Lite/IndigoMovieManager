@@ -1865,6 +1865,64 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task umlFindTreeEve_実WebView2でonSkinLeave後にchangeSkin失敗の直後にTagInputRelationへchangeSkinしてもdirty_stateを持ち越さない()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-umlfindtreeeve-skinleave-missing-then-changeskin-taginput"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveTerminalMissingThenChangeSkinToTagInputRelationAsync(tempRootPath, "onSkinLeave")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonClearAll後にchangeSkin失敗の直後にTagInputRelationへchangeSkinしてもdirty_stateを持ち越さない()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-umlfindtreeeve-clearall-missing-then-changeskin-taginput"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveTerminalMissingThenChangeSkinToTagInputRelationAsync(tempRootPath, "onClearAll")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task umlFindTreeEve_実WebView2でonClearAll後にRefreshしてもtree_footerを二重生成しない()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-clear-rerender");
@@ -2470,6 +2528,63 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("DefaultSmallWB", "onSkinLeave")]
+    [TestCase("DefaultSmallWB", "onClearAll")]
+    [TestCase("Chappy", "onSkinLeave")]
+    [TestCase("Chappy", "onClearAll")]
+    [TestCase("Search_table", "onSkinLeave")]
+    [TestCase("Search_table", "onClearAll")]
+    [TestCase("Alpha2", "onSkinLeave")]
+    [TestCase("Alpha2", "onClearAll")]
+    public async Task build出力skinでも差分サムネ更新後にterminalを挟んでMissingSkin失敗直後にchangeSkin成功できる(
+        string skinFolderName,
+        string callbackName
+    )
+    {
+        string nextSkinFolderName = string.Equals(
+            skinFolderName,
+            "DefaultSmallWB",
+            StringComparison.Ordinal
+        )
+            ? "Search_table"
+            : "DefaultSmallWB";
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-thumb-terminal-missing-then-changeskin-{skinFolderName.ToLowerInvariant()}-{callbackName.ToLowerInvariant()}-{nextSkinFolderName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinSerialChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinThumbTerminalMissingThenChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            callbackName,
+                            nextSkinFolderName
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.MissingChangeSkinResult, Is.EqualTo("false"));
+                Assert.That(result.NextChangeSkinResult, Is.EqualTo("true"));
+                Assert.That(result.CurrentSkin, Is.EqualTo(nextSkinFolderName));
+                Assert.That(result.ViewValue, Is.Not.Empty);
+                Assert.That(result.ViewValue, Does.Not.Contain("updated-build-thumb-77"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [TestCase("DefaultSmallWB")]
     [TestCase("Chappy")]
     [TestCase("Search_table")]
@@ -2689,6 +2804,63 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 Assert.That(result.BeforeTagText, Does.Contain("series-a"));
                 Assert.That(result.AfterTagText, Does.Contain("series-a"));
                 Assert.That(result.AfterTagText, Does.Not.Contain("fresh-tag"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [TestCase("Search_table", "onSkinLeave")]
+    [TestCase("Search_table", "onClearAll")]
+    [TestCase("Chappy", "onSkinLeave")]
+    [TestCase("Chappy", "onClearAll")]
+    [TestCase("DefaultSmallWB", "onSkinLeave")]
+    [TestCase("DefaultSmallWB", "onClearAll")]
+    [TestCase("Alpha2", "onSkinLeave")]
+    [TestCase("Alpha2", "onClearAll")]
+    public async Task build出力skinでもtag差分更新後にterminalを挟んでMissingSkin失敗直後にchangeSkin成功できる(
+        string skinFolderName,
+        string callbackName
+    )
+    {
+        string nextSkinFolderName = string.Equals(
+            skinFolderName,
+            "DefaultSmallWB",
+            StringComparison.Ordinal
+        )
+            ? "Search_table"
+            : "DefaultSmallWB";
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-modifytags-terminal-missing-then-changeskin-{skinFolderName.ToLowerInvariant()}-{callbackName.ToLowerInvariant()}-{nextSkinFolderName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinSerialChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinModifyTagsTerminalMissingThenChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            callbackName,
+                            nextSkinFolderName
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.MissingChangeSkinResult, Is.EqualTo("false"));
+                Assert.That(result.NextChangeSkinResult, Is.EqualTo("true"));
+                Assert.That(result.CurrentSkin, Is.EqualTo(nextSkinFolderName));
+                Assert.That(result.ViewValue, Does.Contain("series-a"));
+                Assert.That(result.ViewValue, Does.Not.Contain("fresh-tag"));
             });
         }
         finally
@@ -8350,6 +8522,618 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         {
             hostWindow.Close();
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<BuildOutputSkinSerialChangeSkinVerificationResult> VerifyBuildOutputSkinThumbTerminalMissingThenChangeSkinAsync(
+        string tempRootPath,
+        string skinFolderName,
+        string callbackName,
+        string nextSkinFolderName
+    )
+    {
+        const string UpdatedThumbUrl = "about:blank#updated-build-thumb-77";
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName, nextSkinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string currentSkinName = skinFolderName;
+        string missingChangeSkinResult = "";
+        string nextChangeSkinResult = "";
+        ConcurrentDictionary<string, string> pendingChangeSkinRequests = new(
+            StringComparer.Ordinal
+        );
+        ConcurrentQueue<string> changeSkinTrace = new();
+        TaskCompletionSource<string> missingChangeSkinResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource<string> nextChangeSkinResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 40,
+            Top = 40,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    string requestedSkinName =
+                        e.Payload.ValueKind == JsonValueKind.Object
+                        && e.Payload.TryGetProperty("skinName", out JsonElement skinNameElement)
+                            ? skinNameElement.GetString() ?? ""
+                            : "";
+                    pendingChangeSkinRequests[e.MessageId] = requestedSkinName;
+                    changeSkinTrace.Enqueue($"request:{requestedSkinName}:{e.MessageId}");
+                    _ = HandleChangeSkinAsync(requestedSkinName, e.MessageId);
+                    break;
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinSerialChangeSkinVerificationResult.Failed(
+                        $"{skinFolderName} thumb terminal missing->changeSkin 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinSerialChangeSkinVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build thumb terminal missing->changeSkin 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('img77')
+                  && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回サムネ表示完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onUpdateThum",
+                new
+                {
+                    movieId = 77,
+                    id = 77,
+                    recordKey = "db-main:77",
+                    thumbUrl = UpdatedThumbUrl,
+                    thum = UpdatedThumbUrl,
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                $$"""
+                document.getElementById('img77')
+                  && document.getElementById('img77').getAttribute('src') === '{{UpdatedThumbUrl}}'
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal missing->changeSkin 前差分サムネ更新完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(callbackName, new { });
+
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  window.__immBuildThumbTerminalMissingThenResult1 = await wb.changeSkin("MissingSkin");
+                })();
+                """
+            );
+
+            try
+            {
+                await WaitAsync(
+                    missingChangeSkinResolved.Task,
+                    TimeSpan.FromSeconds(10),
+                    $"{skinFolderName} の terminal missing->changeSkin で host 側 MissingSkin 応答を待てませんでした。"
+                );
+            }
+            catch (AssertionException ex)
+            {
+                throw new AssertionException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            await WaitForWebConditionAsync(
+                webView,
+                "window.__immBuildThumbTerminalMissingThenResult1 === false",
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal missing->changeSkin で MissingSkin 結果を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                $$"""
+                (async () => {
+                  await wb.changeSkin("{{nextSkinFolderName}}");
+                })();
+                """
+            );
+
+            try
+            {
+                await WaitAsync(
+                    nextChangeSkinResolved.Task,
+                    TimeSpan.FromSeconds(15),
+                    $"{skinFolderName} の terminal missing->changeSkin で host 側 next skin 応答を待てませんでした。"
+                );
+            }
+            catch (AssertionException ex)
+            {
+                throw new AssertionException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            try
+            {
+                await WaitForWebConditionAsync(
+                    webView,
+                    $$"""
+                    document.getElementById('img77')
+                      && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                      && document.getElementById('img77').getAttribute('src') !== '{{UpdatedThumbUrl}}'
+                    """,
+                    TimeSpan.FromSeconds(15),
+                    $"{skinFolderName} の terminal missing->changeSkin 後サムネ表示完了を待てませんでした。"
+                );
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            string afterThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            string pendingSnapshot = BuildChangeSkinDebugSnapshot();
+
+            return BuildOutputSkinSerialChangeSkinVerificationResult.Succeeded(
+                currentSkinName,
+                await missingChangeSkinResolved.Task,
+                await nextChangeSkinResolved.Task,
+                afterThumbSrc,
+                pendingSnapshot
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+
+        async Task HandleChangeSkinAsync(string requestedSkinName, string messageId)
+        {
+            string requestedHtmlPath = WhiteBrowserSkinTestData.GetFixtureHtmlPath(
+                skinRootPath,
+                requestedSkinName
+            );
+            if (string.IsNullOrWhiteSpace(requestedHtmlPath) || !File.Exists(requestedHtmlPath))
+            {
+                await hostControl.ResolveRequestAsync(messageId, false);
+                pendingChangeSkinRequests.TryRemove(messageId, out _);
+                missingChangeSkinResult = "false";
+                changeSkinTrace.Enqueue($"resolve:false:{requestedSkinName}:{messageId}");
+                if (string.Equals(requestedSkinName, "MissingSkin", StringComparison.Ordinal))
+                {
+                    missingChangeSkinResolved.TrySetResult("false");
+                }
+                return;
+            }
+
+            currentSkinName = requestedSkinName;
+            await hostControl.ResolveRequestAsync(messageId, true);
+            pendingChangeSkinRequests.TryRemove(messageId, out _);
+            changeSkinTrace.Enqueue($"resolve:true:{requestedSkinName}:{messageId}");
+            if (string.Equals(requestedSkinName, nextSkinFolderName, StringComparison.Ordinal))
+            {
+                nextChangeSkinResult = "true";
+                nextChangeSkinResolved.TrySetResult("true");
+            }
+            WhiteBrowserSkinHostOperationResult changeResult = await hostControl.TryNavigateAsync(
+                requestedSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                requestedHtmlPath,
+                thumbRootPath
+            );
+            if (!changeResult.Succeeded)
+            {
+                throw new AssertionException(
+                    $"runtime bridge の build thumb terminal missing->changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                );
+            }
+        }
+
+        string BuildChangeSkinDebugSnapshot()
+        {
+            string pending = string.Join(
+                ",",
+                pendingChangeSkinRequests.Select(pair => $"{pair.Key}:{pair.Value}")
+            );
+            string trace = string.Join(" | ", changeSkinTrace.ToArray());
+            return JsonSerializer.Serialize(
+                new
+                {
+                    currentSkinName,
+                    missingChangeSkinResult,
+                    nextChangeSkinResult,
+                    pending,
+                    trace,
+                }
+            );
+        }
+    }
+
+    private static async Task<BuildOutputSkinSerialChangeSkinVerificationResult> VerifyBuildOutputSkinModifyTagsTerminalMissingThenChangeSkinAsync(
+        string tempRootPath,
+        string skinFolderName,
+        string callbackName,
+        string nextSkinFolderName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName, nextSkinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string currentSkinName = skinFolderName;
+        string missingChangeSkinResult = "";
+        string nextChangeSkinResult = "";
+        ConcurrentDictionary<string, string> pendingChangeSkinRequests = new(
+            StringComparer.Ordinal
+        );
+        ConcurrentQueue<string> changeSkinTrace = new();
+        TaskCompletionSource<string> missingChangeSkinResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource<string> nextChangeSkinResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 40,
+            Top = 40,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    string requestedSkinName =
+                        e.Payload.ValueKind == JsonValueKind.Object
+                        && e.Payload.TryGetProperty("skinName", out JsonElement skinNameElement)
+                            ? skinNameElement.GetString() ?? ""
+                            : "";
+                    pendingChangeSkinRequests[e.MessageId] = requestedSkinName;
+                    changeSkinTrace.Enqueue($"request:{requestedSkinName}:{e.MessageId}");
+                    _ = HandleChangeSkinAsync(requestedSkinName, e.MessageId);
+                    break;
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinSerialChangeSkinVerificationResult.Failed(
+                        $"{skinFolderName} modifyTags terminal missing->changeSkin 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinSerialChangeSkinVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build modifyTags terminal missing->changeSkin 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('series-a') >= 0
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回 tag 表示完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onModifyTags",
+                new
+                {
+                    __immCallArgs = new object[] { 77, new[] { "idol", "fresh-tag" } },
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('fresh-tag') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal missing->changeSkin 前 tag 差分更新完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(callbackName, new { });
+
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  window.__immBuildModifyTagsTerminalMissingThenResult1 = await wb.changeSkin("MissingSkin");
+                })();
+                """
+            );
+
+            try
+            {
+                await WaitAsync(
+                    missingChangeSkinResolved.Task,
+                    TimeSpan.FromSeconds(10),
+                    $"{skinFolderName} の terminal missing->changeSkin で host 側 MissingSkin 応答を待てませんでした。"
+                );
+            }
+            catch (AssertionException ex)
+            {
+                throw new AssertionException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            await WaitForWebConditionAsync(
+                webView,
+                "window.__immBuildModifyTagsTerminalMissingThenResult1 === false",
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal missing->changeSkin で MissingSkin 結果を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                $$"""
+                (async () => {
+                  await wb.changeSkin("{{nextSkinFolderName}}");
+                })();
+                """
+            );
+
+            try
+            {
+                await WaitAsync(
+                    nextChangeSkinResolved.Task,
+                    TimeSpan.FromSeconds(15),
+                    $"{skinFolderName} の terminal missing->changeSkin で host 側 next skin 応答を待てませんでした。"
+                );
+            }
+            catch (AssertionException ex)
+            {
+                throw new AssertionException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            try
+            {
+                await WaitForWebConditionAsync(
+                    webView,
+                    """
+                    document.getElementById('tag77')
+                      && (document.getElementById('tag77').textContent || '').indexOf('series-a') >= 0
+                      && (document.getElementById('tag77').textContent || '').indexOf('fresh-tag') < 0
+                    """,
+                    TimeSpan.FromSeconds(15),
+                    $"{skinFolderName} の terminal missing->changeSkin 後 tag 表示完了を待てませんでした。"
+                );
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException(
+                    $"{ex.Message} debug={BuildChangeSkinDebugSnapshot()}",
+                    ex
+                );
+            }
+
+            string afterTagText = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('tag77') ? (document.getElementById('tag77').textContent || '') : ''"
+            );
+            string pendingSnapshot = BuildChangeSkinDebugSnapshot();
+
+            return BuildOutputSkinSerialChangeSkinVerificationResult.Succeeded(
+                currentSkinName,
+                await missingChangeSkinResolved.Task,
+                await nextChangeSkinResolved.Task,
+                afterTagText,
+                pendingSnapshot
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+
+        async Task HandleChangeSkinAsync(string requestedSkinName, string messageId)
+        {
+            string requestedHtmlPath = WhiteBrowserSkinTestData.GetFixtureHtmlPath(
+                skinRootPath,
+                requestedSkinName
+            );
+            if (string.IsNullOrWhiteSpace(requestedHtmlPath) || !File.Exists(requestedHtmlPath))
+            {
+                await hostControl.ResolveRequestAsync(messageId, false);
+                pendingChangeSkinRequests.TryRemove(messageId, out _);
+                missingChangeSkinResult = "false";
+                changeSkinTrace.Enqueue($"resolve:false:{requestedSkinName}:{messageId}");
+                if (string.Equals(requestedSkinName, "MissingSkin", StringComparison.Ordinal))
+                {
+                    missingChangeSkinResolved.TrySetResult("false");
+                }
+                return;
+            }
+
+            currentSkinName = requestedSkinName;
+            await hostControl.ResolveRequestAsync(messageId, true);
+            pendingChangeSkinRequests.TryRemove(messageId, out _);
+            changeSkinTrace.Enqueue($"resolve:true:{requestedSkinName}:{messageId}");
+            if (string.Equals(requestedSkinName, nextSkinFolderName, StringComparison.Ordinal))
+            {
+                nextChangeSkinResult = "true";
+                nextChangeSkinResolved.TrySetResult("true");
+            }
+            WhiteBrowserSkinHostOperationResult changeResult = await hostControl.TryNavigateAsync(
+                requestedSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                requestedHtmlPath,
+                thumbRootPath
+            );
+            if (!changeResult.Succeeded)
+            {
+                throw new AssertionException(
+                    $"runtime bridge の build modifyTags terminal missing->changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                );
+            }
+        }
+
+        string BuildChangeSkinDebugSnapshot()
+        {
+            string pending = string.Join(
+                ",",
+                pendingChangeSkinRequests.Select(pair => $"{pair.Key}:{pair.Value}")
+            );
+            string trace = string.Join(" | ", changeSkinTrace.ToArray());
+            return JsonSerializer.Serialize(
+                new
+                {
+                    currentSkinName,
+                    missingChangeSkinResult,
+                    nextChangeSkinResult,
+                    pending,
+                    trace,
+                }
+            );
         }
     }
 
@@ -14759,6 +15543,233 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveTerminalMissingThenChangeSkinToTagInputRelationAsync(
+        string tempRootPath,
+        string terminalCallbackName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve", "#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+        string[] movie77Tags = ["series-a", "sample"];
+
+        string currentSkinName = "#umlFindTreeEve";
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 41,
+            Top = 41,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    string requestedSkinName =
+                        e.Payload.ValueKind == JsonValueKind.Object &&
+                        e.Payload.TryGetProperty("skinName", out JsonElement skinNameElement)
+                            ? skinNameElement.GetString() ?? ""
+                            : "";
+                    _ = HandleChangeSkinAsync(requestedSkinName, e.MessageId);
+                    break;
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(movie77Tags),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        CreateBuildOutputSkinSampleMovies(movie77Tags)
+                    );
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getRelation":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new object[]
+                        {
+                            new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                            new { id = 91, title = "Beta Next", tags = new[] { "sample" } },
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName);
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve {terminalCallbackName} missing->changeSkin 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('footer')
+                  && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                  && document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tree / footer 生成完了を待てませんでした。"
+            );
+
+            // 直列 missing->success の前に dirty_state を必ず作り、持ち越しを検証する。
+            await hostControl.DispatchCallbackAsync(
+                "onModifyTags",
+                new
+                {
+                    __immCallArgs = new object[]
+                    {
+                        77,
+                        new[] { "series-a", "sample", "fresh-tag" },
+                    },
+                }
+            );
+            movie77Tags = ["series-a", "sample", "fresh-tag"];
+            await webView.ExecuteScriptAsync("Refresh();");
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+                """,
+                TimeSpan.FromSeconds(5),
+                $"umlFindTreeEve の {terminalCallbackName} 前 dirty refresh 反映を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(terminalCallbackName, new { });
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  window.__immTreeTerminalMissingThenResult1 = await wb.changeSkin('MissingSkin');
+                })();
+                """
+            );
+            await WaitForWebConditionAsync(
+                webView,
+                "window.__immTreeTerminalMissingThenResult1 === false",
+                TimeSpan.FromSeconds(5),
+                $"umlFindTreeEve の {terminalCallbackName} 後 missing changeSkin 結果を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  await wb.changeSkin('#TagInputRelation');
+                })();
+                """
+            );
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('Selection')
+                  && document.getElementById('input')
+                  && document.querySelectorAll('#Selection li').length === 0
+                  && !document.getElementById('uml')
+                  && !document.getElementById('footer')
+                """,
+                TimeSpan.FromSeconds(10),
+                $"umlFindTreeEve の {terminalCallbackName} 後 TagInputRelation changeSkin 完了を待てませんでした。"
+            );
+
+            return await ReadCrossSkinDomSnapshotAsync(webView, currentSkinName);
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+
+        async Task HandleChangeSkinAsync(string requestedSkinName, string messageId)
+        {
+            string requestedHtmlPath = WhiteBrowserSkinTestData.GetFixtureHtmlPath(
+                skinRootPath,
+                requestedSkinName
+            );
+            if (string.IsNullOrWhiteSpace(requestedHtmlPath) || !File.Exists(requestedHtmlPath))
+            {
+                await hostControl.ResolveRequestAsync(messageId, false);
+                return;
+            }
+
+            currentSkinName = requestedSkinName;
+            await hostControl.ResolveRequestAsync(messageId, true);
+            WhiteBrowserSkinHostOperationResult changeResult = await hostControl.TryNavigateAsync(
+                requestedSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                requestedHtmlPath,
+                thumbRootPath
+            );
+            if (!changeResult.Succeeded)
+            {
+                throw new AssertionException(
+                    $"runtime bridge の {terminalCallbackName} missing->changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                );
+            }
+        }
+    }
+
     private static async Task<UmlFindTreeVerificationResult> VerifyUmlFindTreeEveClearAllAndRefreshAsync(
         string tempRootPath
     )
@@ -18680,6 +19691,44 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 currentSkin,
                 changeSkinResult,
                 tagText
+            );
+        }
+    }
+
+    private sealed record BuildOutputSkinSerialChangeSkinVerificationResult(
+        string IgnoreReason,
+        string CurrentSkin,
+        string MissingChangeSkinResult,
+        string NextChangeSkinResult,
+        string ViewValue,
+        string PendingProbeSnapshot
+    )
+    {
+        public static BuildOutputSkinSerialChangeSkinVerificationResult Ignored(string reason)
+        {
+            return new BuildOutputSkinSerialChangeSkinVerificationResult(reason, "", "", "", "", "");
+        }
+
+        public static BuildOutputSkinSerialChangeSkinVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static BuildOutputSkinSerialChangeSkinVerificationResult Succeeded(
+            string currentSkin,
+            string missingChangeSkinResult,
+            string nextChangeSkinResult,
+            string viewValue,
+            string pendingProbeSnapshot
+        )
+        {
+            return new BuildOutputSkinSerialChangeSkinVerificationResult(
+                "",
+                currentSkin,
+                missingChangeSkinResult,
+                nextChangeSkinResult,
+                viewValue,
+                pendingProbeSnapshot
             );
         }
     }

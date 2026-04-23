@@ -1,6 +1,8 @@
 using IndigoMovieManager;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.ViewModels;
+using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -423,6 +425,124 @@ public sealed class WatcherRegistrationDirectPipelineTests
     }
 
     [Test]
+    public async Task ProcessWatchEventAsync_Renamed_未登録pathはWatchScanへ再合流する()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string newMoviePath = Path.Combine(tempRoot, "after.mp4");
+        await File.WriteAllBytesAsync(newMoviePath, [0x1]);
+
+        try
+        {
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            MainWindowViewModel mainVm = GetPrivateField<MainWindowViewModel>(window, "MainVM");
+            mainVm.MovieRecs = [];
+            List<string> queuedRequests = [];
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queuedRequests.Add($"{mode}:{trigger}");
+            };
+
+            MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+            object request = CreateRenamedWatchEventRequest(
+                newMoviePath,
+                Path.Combine(tempRoot, "before.mp4")
+            );
+            Task task = (Task)method.Invoke(window, [request])!;
+            await task;
+
+            Assert.That(
+                queuedRequests,
+                Is.EqualTo([$"Watch:renamed-untracked:{newMoviePath}"])
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task ProcessWatchEventAsync_CreatedからRenamedの最終整合をDBサムネqueueで観測できる()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string thumbnailRoot = Path.Combine(tempRoot, "thumbnail");
+        Directory.CreateDirectory(thumbnailRoot);
+        string oldMoviePath = Path.Combine(tempRoot, "before.mp4");
+        string newMoviePath = Path.Combine(tempRoot, "after.mp4");
+        string sourceThumbnailPath = Path.Combine(thumbnailRoot, "before.jpg");
+        string dbPath = CreateTempMainDbForRename(oldMoviePath);
+        await File.WriteAllBytesAsync(oldMoviePath, [0x1]);
+        await File.WriteAllBytesAsync(sourceThumbnailPath, [0x1]);
+
+        try
+        {
+            MainWindow window = CreateMainWindow(dbPath, currentTabIndex: 2);
+            MainWindowViewModel mainVm = GetPrivateField<MainWindowViewModel>(window, "MainVM");
+            mainVm.DbInfo.DBName = "main";
+            mainVm.DbInfo.ThumbFolder = thumbnailRoot;
+            mainVm.DbInfo.BookmarkFolder = Path.Combine(tempRoot, "bookmark-missing");
+            mainVm.MovieRecs =
+            [
+                new MovieRecords
+                {
+                    Movie_Id = 1,
+                    Movie_Path = oldMoviePath,
+                    Movie_Name = "before",
+                    ThumbPathSmall = sourceThumbnailPath,
+                },
+            ];
+
+            // uninitialized MainWindow でも rename の DB 反映を実経路で流せるよう、mutation facade だけ補う。
+            SetPrivateField(window, "_mainDbMovieMutationFacade", new MainDbMovieMutationFacade());
+
+            List<string> queuedRequests = [];
+            window.QueueCheckFolderAsyncForTesting = (mode, trigger) =>
+            {
+                queuedRequests.Add($"{mode}:{trigger}");
+                return Task.CompletedTask;
+            };
+
+            MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+            Task createdTask = (Task)method.Invoke(window, [CreateCreatedWatchEventRequest(oldMoviePath)])!;
+            await createdTask;
+            Task renamedTask = (Task)method.Invoke(
+                window,
+                [CreateRenamedWatchEventRequest(newMoviePath, oldMoviePath)]
+            )!;
+            await renamedTask;
+
+            MovieRecords renamedMovie = mainVm.MovieRecs.Single();
+            string expectedThumbnailPath = Path.Combine(thumbnailRoot, "after.jpg");
+            (string MoviePath, string MovieName) persisted = ReadMoviePathAndNameFromDb(dbPath, 1);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(queuedRequests, Is.EqualTo([($"Watch:created:{oldMoviePath}")]));
+                Assert.That(renamedMovie.Movie_Path, Is.EqualTo(newMoviePath));
+                Assert.That(renamedMovie.Movie_Name, Is.EqualTo("after"));
+                Assert.That(persisted.MoviePath, Is.EqualTo(newMoviePath));
+                Assert.That(persisted.MovieName, Is.EqualTo("after"));
+                Assert.That(File.Exists(sourceThumbnailPath), Is.False);
+                Assert.That(File.Exists(expectedThumbnailPath), Is.True);
+                Assert.That(renamedMovie.ThumbPathSmall, Is.EqualTo(expectedThumbnailPath));
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public void ProcessRenamedWatchEventDirect_RenameThumbへ即渡す()
     {
         string actualNewPath = "";
@@ -779,5 +899,88 @@ public sealed class WatcherRegistrationDirectPipelineTests
         }
 
         Assert.Fail(failureMessage);
+    }
+
+    private static string CreateTempMainDbForRename(string oldMoviePath)
+    {
+        string dbPath = Path.Combine(Path.GetTempPath(), $"imm-watch-rename-{Guid.NewGuid():N}.wb");
+        SQLiteConnection.CreateFile(dbPath);
+
+        using SQLiteConnection connection = new($"Data Source={dbPath}");
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = @"
+CREATE TABLE movie (
+    movie_id INTEGER PRIMARY KEY,
+    tag TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    view_count INTEGER NOT NULL,
+    last_date TEXT NOT NULL,
+    movie_path TEXT NOT NULL,
+    movie_name TEXT NOT NULL,
+    movie_length INTEGER NOT NULL,
+    kana TEXT NOT NULL,
+    roma TEXT NOT NULL
+);
+
+INSERT INTO movie (
+    movie_id,
+    tag,
+    score,
+    view_count,
+    last_date,
+    movie_path,
+    movie_name,
+    movie_length,
+    kana,
+    roma
+)
+VALUES (
+    1,
+    '',
+    0,
+    0,
+    '2026-03-20 00:00:00',
+    @old_movie_path,
+    'before',
+    0,
+    '',
+    ''
+);";
+        _ = command.Parameters.AddWithValue("@old_movie_path", oldMoviePath);
+        command.ExecuteNonQuery();
+        return dbPath;
+    }
+
+    private static (string MoviePath, string MovieName) ReadMoviePathAndNameFromDb(
+        string dbPath,
+        long movieId
+    )
+    {
+        using SQLiteConnection connection = new($"Data Source={dbPath}");
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT movie_path, movie_name FROM movie WHERE movie_id = @movie_id;";
+        _ = command.Parameters.AddWithValue("@movie_id", movieId);
+        using SQLiteDataReader reader = command.ExecuteReader();
+        Assert.That(reader.Read(), Is.True);
+        return (reader["movie_path"]?.ToString() ?? "", reader["movie_name"]?.ToString() ?? "");
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // 一時DBの掃除失敗は、テスト本体の判定を優先する。
+        }
     }
 }

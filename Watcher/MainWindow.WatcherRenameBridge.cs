@@ -405,11 +405,51 @@ namespace IndigoMovieManager
                     }
                 }
 
+                // Created 直後に rename されて旧パスが未登録だった場合は、
+                // rename だけでは取り込めないため watch scan へ再合流して最終整合を回収する。
+                if (changedMovies.Count < 1)
+                {
+                    TryQueueWatchScanForUntrackedRename(eFullPath, oldFullPath);
+                    return;
+                }
+
                 string currentSort = MainVM?.DbInfo?.Sort ?? "";
                 await Dispatcher.InvokeAsync(() => ReloadBookmarkTabData());
                 await RefreshMovieViewAfterRenameAsync(currentSort, changedMovies);
             }
             catch (Exception) { }
+        }
+
+        // 旧パス未登録の rename は scan 本流へ戻し、Created -> Renamed 連鎖の取りこぼしを防ぐ。
+        private void TryQueueWatchScanForUntrackedRename(string newFullPath, string oldFullPath)
+        {
+            if (!ShouldQueueWatchScanForUntrackedRename(newFullPath, oldFullPath))
+            {
+                return;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch",
+                $"rename without tracked movie rerouted to queued watch scan: old='{oldFullPath}' new='{newFullPath}'"
+            );
+            _ = QueueCheckFolderAsync(CheckMode.Watch, $"renamed-untracked:{newFullPath}");
+        }
+
+        internal static bool ShouldQueueWatchScanForUntrackedRename(
+            string newFullPath,
+            string oldFullPath
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(newFullPath)
+                || string.IsNullOrWhiteSpace(oldFullPath)
+                || string.Equals(newFullPath, oldFullPath, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return false;
+            }
+
+            return File.Exists(newFullPath);
         }
 
         // Windows の rename は大文字小文字違いだけでも飛んでくるため、比較は大文字小文字を無視する。

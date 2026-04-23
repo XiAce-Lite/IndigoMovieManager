@@ -50,6 +50,7 @@
 - `WatchLoopDecision` を `movie loop` と `pending flush` の共通戻り値へ揃え、`return / break / continue` の flow を同じ読み筋で追える形へ寄せた
 - `watch folder` 解決、`scan 準備`、`movie loop preparation`、`loop decision await/apply`、`folder phase result`、`run finish` 呼び出しも helper 化し、`CheckFolderAsync(...)` は段ごとの orchestration を読む形へさらに近づいた
 - `scan strategy 通知` と `scan mode 診断` は runtime 側で束ね、`Watcher.cs` 側は orchestration と通知入口に専念する形へ整理した
+- `WatcherEventQueue` は処理 task を 1 本共有し、enqueue ごとに queue runner を増やさない形へ寄せて watch burst 時の先頭詰まり増幅を抑えた
 
 ## 1. 目的
 

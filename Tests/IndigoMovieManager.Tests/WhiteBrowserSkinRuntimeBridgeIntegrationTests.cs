@@ -84,6 +84,30 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task ResolveRequestAsync_compat本体が壊れていてもalias経由でpendingを解決できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-alias-dispatch");
+
+        try
+        {
+            RuntimeBridgeLifecycleVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyCompatAliasDispatchFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.That(result.LifecycleEvents, Does.Contain("focus:90:true"));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task TutorialCallbackGrid_実WebView2で初回update_focus_leave_clearまで流せる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-tutorial-grid");
@@ -5476,6 +5500,167 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
 
             await runtimeBridge.HandleSkinLeaveAsync();
             await runtimeBridge.HandleSkinLeaveAsync();
+
+            string lifecycleJson = await ReadJsonStringAsync(
+                webView,
+                "JSON.stringify(window.__wbSequence)"
+            );
+            return RuntimeBridgeLifecycleVerificationResult.Succeeded(
+                DeserializeStringArray(lifecycleJson)
+            );
+        }
+        finally
+        {
+            runtimeBridge.Dispose();
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<RuntimeBridgeLifecycleVerificationResult> VerifyCompatAliasDispatchFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = Path.Combine(tempRootPath, "skin");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(skinRootPath);
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            throw new AssertionException($"compat script が見つかりません: {compatScriptPath}");
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        WhiteBrowserSkinRuntimeBridge runtimeBridge = new();
+        Window hostWindow = new()
+        {
+            Width = 180,
+            Height = 120,
+            Left = 16,
+            Top = 16,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult attachResult =
+                await runtimeBridge.TryEnsureAttachedAsync(
+                    webView,
+                    "RuntimeBridgeAliasDispatchTest",
+                    userDataFolderPath,
+                    skinRootPath,
+                    thumbRootPath
+                );
+            if (!attachResult.Succeeded)
+            {
+                return attachResult.RuntimeAvailable
+                    ? RuntimeBridgeLifecycleVerificationResult.Failed(
+                        $"WebView2 初期化に失敗しました: {attachResult.ErrorType} {attachResult.ErrorMessage}"
+                    )
+                    : RuntimeBridgeLifecycleVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため alias dispatch 統合確認をスキップします: {attachResult.ErrorMessage}"
+                    );
+            }
+
+            runtimeBridge.WebMessageReceived += (_, e) =>
+            {
+                if (string.Equals(e.Method, "getSelectThums", StringComparison.Ordinal))
+                {
+                    _ = runtimeBridge.ResolveRequestAsync(e.MessageId, Array.Empty<int>());
+                    return;
+                }
+
+                if (!string.Equals(e.Method, "focusThum", StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _ = runtimeBridge.ResolveRequestAsync(
+                    e.MessageId,
+                    new
+                    {
+                        movieId = 90,
+                        id = 90,
+                        focused = true,
+                        focusedMovieId = 90,
+                        selected = false,
+                    }
+                );
+            };
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildLifecycleHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                throw new AssertionException(
+                    "runtime bridge alias dispatch harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbDone = false;
+                  window.__wbError = "";
+                  window.__wbSequence = [];
+                  // skin 側が compat 本体を誤って壊しても、C# からの resolve は固定 alias で救う。
+                  window.__immWbCompat = {};
+                  wb.focusThum(90).then(function () {
+                    window.__wbDone = true;
+                  }).catch(function (error) {
+                    window.__wbError = String(error && error.message ? error.message : error);
+                    window.__wbDone = true;
+                  });
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbDone");
+
+            string error = await ReadJsonStringAsync(webView, "window.__wbError || \"\"");
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
 
             string lifecycleJson = await ReadJsonStringAsync(
                 webView,

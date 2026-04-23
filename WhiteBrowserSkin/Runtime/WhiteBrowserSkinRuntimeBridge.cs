@@ -259,9 +259,9 @@ namespace IndigoMovieManager.Skin.Runtime
                 ", ",
                 arguments.Select(argument => JsonSerializer.Serialize(argument))
             );
-            // __immWbCompat が一時的に差し替わっても bridge alias 側で受けられるようにする。
+            // __immWbCompat が壊れていても、固定 alias 側へ落として pending 解決を守る。
             string script =
-                $"(() => {{ const bridge = window.__immWbCompat || window.__immWbCompatBridge; if (bridge && typeof bridge[{JsonSerializer.Serialize(functionName)}] === 'function') {{ bridge[{JsonSerializer.Serialize(functionName)}]({serializedArguments}); }} }})();";
+                $"(() => {{ const name = {JsonSerializer.Serialize(functionName)}; const primary = window.__immWbCompat; const alias = window.__immWbCompatBridge; const bridge = primary && typeof primary[name] === 'function' ? primary : alias; if (bridge && typeof bridge[name] === 'function') {{ bridge[name]({serializedArguments}); }} }})();";
             return ExecuteScriptAsync(script);
         }
 

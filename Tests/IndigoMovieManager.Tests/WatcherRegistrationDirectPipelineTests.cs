@@ -425,6 +425,122 @@ public sealed class WatcherRegistrationDirectPipelineTests
     }
 
     [Test]
+    public async Task QueueWatchEventAsync_Created_detached処理はdrain待機で完了を観測できる()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+        FileStream? createdMovieLock = null;
+
+        try
+        {
+            // Created ready 待ちを意図的に遅延させ、queue本体とdetached taskを分離して観測する。
+            createdMovieLock = new FileStream(
+                createdMoviePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
+
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            TaskCompletionSource<string> queueRequested = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            window.QueueCheckFolderAsyncForTesting = (mode, trigger) =>
+            {
+                queueRequested.TrySetResult($"{mode}:{trigger}");
+                return Task.CompletedTask;
+            };
+
+            MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+            Task queueRunnerTask = (Task)queueMethod.Invoke(
+                window,
+                [CreateCreatedWatchEventRequest(createdMoviePath), "watch-created"]
+            )!;
+            await queueRunnerTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Task detachedCreatedTask = GetPrivateField<Task>(
+                window,
+                "_watchCreatedEventProcessingTask"
+            );
+            Assert.That(detachedCreatedTask.IsCompleted, Is.False);
+            Assert.That(queueRequested.Task.IsCompleted, Is.False);
+
+            createdMovieLock.Dispose();
+            createdMovieLock = null;
+
+            string queuedRequest = await queueRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await detachedCreatedTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(queuedRequest, Is.EqualTo($"Watch:created:{createdMoviePath}"));
+                Assert.That(detachedCreatedTask.IsCompleted, Is.True);
+                Assert.That(
+                    GetPrivateField<Task>(window, "_watchCreatedEventProcessingTask").IsCompleted,
+                    Is.True
+                );
+            });
+        }
+        finally
+        {
+            createdMovieLock?.Dispose();
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task QueueWatchEventAsync_Created_UI抑制中はdetached処理がdrain後に残留しない()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+
+        try
+        {
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            SetPrivateField(window, "_watchUiSuppressionCount", 1);
+            List<string> queuedRequests = [];
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queuedRequests.Add($"{mode}:{trigger}");
+            };
+
+            MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+            Task queueRunnerTask = (Task)queueMethod.Invoke(
+                window,
+                [CreateCreatedWatchEventRequest(createdMoviePath), "watch-created-suppressed"]
+            )!;
+            await queueRunnerTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Task detachedCreatedTask = GetPrivateField<Task>(
+                window,
+                "_watchCreatedEventProcessingTask"
+            );
+            await detachedCreatedTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(detachedCreatedTask.IsCompleted, Is.True);
+                Assert.That(queuedRequests, Is.Empty);
+                Assert.That(GetPrivateField<bool>(window, "_watchWorkDeferredWhileSuppressed"), Is.True);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public async Task ProcessWatchEventAsync_Renamed_未登録pathはWatchScanへ再合流する()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -751,6 +867,38 @@ public sealed class WatcherRegistrationDirectPipelineTests
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    [Test]
+    public async Task QueueWatchEventAsync_Shutdown開始後は新規イベントを受け付けない()
+    {
+        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+        int queueCheckRequestedCount = 0;
+        window.QueueCheckFolderAsyncRequestedForTesting = (_, _) => queueCheckRequestedCount++;
+
+        MethodInfo beginShutdownMethod = typeof(MainWindow).GetMethod(
+            "BeginWatchEventQueueShutdownForClosing",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        beginShutdownMethod.Invoke(window, null);
+
+        MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+        object createdRequest = CreateCreatedWatchEventRequest(@"E:\Movies\shutdown-created.mp4");
+        Task queueTask = (Task)queueMethod.Invoke(window, [createdRequest, "watch-created"])!;
+        await queueTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        object watchEventRequests = GetPrivateField<object>(window, "_watchEventRequests");
+        int pendingRequestCount = (int)(
+            watchEventRequests.GetType().GetProperty("Count", BindingFlags.Instance | BindingFlags.Public)
+            ?.GetValue(watchEventRequests) ?? -1
+        );
+
+        Assert.That(queueCheckRequestedCount, Is.EqualTo(0));
+        Assert.That(pendingRequestCount, Is.EqualTo(0));
+        Assert.That(
+            GetPrivateField<Task>(window, "_watchEventProcessingTask"),
+            Is.SameAs(Task.CompletedTask)
+        );
     }
 
     private static MainWindow CreateMainWindow(string dbFullPath, int currentTabIndex)

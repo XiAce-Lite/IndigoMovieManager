@@ -25,6 +25,37 @@ public sealed class UiHangOverlayLifecycleSourceTests
     }
 
     [Test]
+    public void MainWindow_Closingはwatcher入力停止後にwatch_queueとcreated_pipelineを待つ()
+    {
+        string mainWindowSource = GetSourceText(new[] { "Views", "Main", "MainWindow.xaml.cs" })
+            .Replace("\r\n", "\n");
+        string watcherQueueSource = GetSourceText(new[] { "Watcher", "MainWindow.WatcherEventQueue.cs" })
+            .Replace("\r\n", "\n");
+
+        Assert.That(mainWindowSource, Does.Contain("StopAndClearFileWatchers();"));
+        Assert.That(
+            mainWindowSource,
+            Does.Contain("BeginWatchEventQueueShutdownForClosing();")
+        );
+        Assert.That(
+            mainWindowSource,
+            Does.Contain("DrainWatchEventPipelinesForShutdown();")
+        );
+        Assert.That(
+            watcherQueueSource,
+            Does.Contain("private void BeginWatchEventQueueShutdownForClosing()")
+        );
+        Assert.That(
+            watcherQueueSource,
+            Does.Contain("private void DrainWatchEventPipelinesForShutdown()")
+        );
+        Assert.That(
+            watcherQueueSource,
+            Does.Contain("WaitWatchPipelineTaskForShutdown(")
+        );
+    }
+
+    [Test]
     public void NativeOverlayHostはowner付き生成と停止時即hideを持つ()
     {
         string source = GetSourceText(new[] { "Views", "Main", "NativeOverlayHost.cs" });

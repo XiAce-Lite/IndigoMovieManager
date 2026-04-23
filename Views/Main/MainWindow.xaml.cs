@@ -612,6 +612,7 @@ namespace IndigoMovieManager
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
                 _everythingWatchPollCts.Cancel();
+                StopAndClearFileWatchers();
                 BeginWhiteBrowserSkinStatePersisterShutdown();
                 DebugRuntimeLog.Write(
                     "lifecycle",
@@ -624,12 +625,13 @@ namespace IndigoMovieManager
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
                 CancelKanaBackfill("window-closing");
+                BeginWatchEventQueueShutdownForClosing();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/4): サムネイル消費タスク停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/5): サムネイル消費タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/4): サムネイル保存タスク停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/5): サムネイル保存タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
 
                 ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/5): skin保存タスク停止待機");
@@ -638,7 +640,11 @@ namespace IndigoMovieManager
                 ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/5): 監視ポーリング停止待機");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(5/5): rescue worker を停止中");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(5/5): watch created ready停止待機");
+                // Created ready待機は queue 側と連携して短時間だけdrainし、終了境界の取りこぼしを減らす。
+                DrainWatchEventPipelinesForShutdown();
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中: rescue worker を停止中");
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "shutdown: starting rescue worker cleanup."

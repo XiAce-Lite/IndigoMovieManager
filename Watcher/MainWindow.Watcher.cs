@@ -169,8 +169,8 @@ namespace IndigoMovieManager
                         useIncrementalUiMode,
                         canUseQueryOnlyWatchReload,
                         List<PendingMovieRegistration> pendingNewMovies,
-                        WatchPendingNewMovieFlushContext pendingMovieFlushContext,
-                        WatchScannedMovieContext scannedMovieContext,
+                        _,
+                        _,
                         folderScanContext,
                         scanBackgroundElapsedMs
                     ) = await PrepareWatchFolderScanAsync(

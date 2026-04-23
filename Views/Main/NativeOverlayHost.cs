@@ -22,6 +22,8 @@ namespace IndigoMovieManager
         private const double FallbackWindowOpacity = 0.6;
         private const string OverlayLogCategory = "ui-overlay";
         private const int OverlayThreadJoinTimeoutMs = 1000;
+        private const int ShutdownSafetyFuseRetryCount = 3;
+        private const int ShutdownSafetyFuseRetryDelayMs = 100;
         private const int ReleaseLogThrottleMilliseconds = 800;
         private static readonly nint HwndTopmost = new(-1);
 #if !DEBUG
@@ -146,6 +148,7 @@ namespace IndigoMovieManager
 
                 if (!joinCompleted)
                 {
+                    RunShutdownSafetyFuse(overlayHwnd);
                     Log("overlay thread still alive after shutdown request");
                 }
             }
@@ -1113,6 +1116,28 @@ namespace IndigoMovieManager
 
             Log($"overlay close requested: hwnd={overlayHwnd}");
             _ = PostMessage(overlayHwnd, (uint)WindowMessage.WM_CLOSE, nint.Zero, nint.Zero);
+        }
+
+        // join timeout 後だけ短時間の再 hide / close を入れ、終了競合での残留を最終段で抑える。
+        private void RunShutdownSafetyFuse(nint overlayHwnd)
+        {
+            if (overlayHwnd == nint.Zero)
+            {
+                return;
+            }
+
+            Log($"overlay shutdown safety fuse start: hwnd={overlayHwnd}");
+            for (int retry = 0; retry < ShutdownSafetyFuseRetryCount; retry++)
+            {
+                ForceHideNativeOverlayImmediately(overlayHwnd);
+                RequestOverlayClose(overlayHwnd);
+                if (retry < ShutdownSafetyFuseRetryCount - 1)
+                {
+                    Thread.Sleep(ShutdownSafetyFuseRetryDelayMs);
+                }
+            }
+
+            Log($"overlay shutdown safety fuse end: hwnd={overlayHwnd}");
         }
 
         private void ThrowIfDisposed()

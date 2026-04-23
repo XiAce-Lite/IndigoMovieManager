@@ -5677,7 +5677,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                   window.__wbDone = false;
                   window.__wbError = "";
                   window.__wbSequence = [];
-                  // skin 側が compat 本体を誤って壊しても、C# からの resolve は固定 alias で救う。
+                  // skin 側が compat 本体を誤って壊しても、C# からの resolve は固定 alias fallback で救う。
                   window.__immWbCompat = {};
                   wb.focusThum(90).then(function () {
                     window.__wbDone = true;
@@ -5697,28 +5697,42 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 throw new AssertionException(error);
             }
 
+            string focusLifecycleJson = await ReadJsonStringAsync(
+                webView,
+                "JSON.stringify(window.__wbSequence)"
+            );
+
+            await webView.ExecuteScriptAsync("window.__wbSequence = [];");
+            await runtimeBridge.HandleSkinLeaveAsync();
+            await WaitForWebConditionAsync(
+                webView,
+                "Array.isArray(window.__wbSequence) && window.__wbSequence.indexOf('clear') >= 0 && window.__wbSequence.indexOf('leave') >= 0",
+                TimeSpan.FromSeconds(5),
+                "compat alias 経由の handleSkinLeave 完了を待てませんでした。"
+            );
+            string handleLifecycleJson = await ReadJsonStringAsync(
+                webView,
+                "JSON.stringify(window.__wbSequence)"
+            );
+
+            await webView.ExecuteScriptAsync("window.__wbSequence = [];");
             await runtimeBridge.DispatchCallbackAsync("onClearAll", new { });
             await WaitForWebConditionAsync(
                 webView,
-                "Array.isArray(window.__wbSequence) && window.__wbSequence.indexOf('clear') >= 0",
+                "JSON.stringify(window.__wbSequence) === '[\"clear\"]'",
                 TimeSpan.FromSeconds(5),
                 "compat alias 経由の dispatchCallback(onClearAll) 完了を待てませんでした。"
             );
 
-            await runtimeBridge.HandleSkinLeaveAsync();
-            await WaitForWebConditionAsync(
-                webView,
-                "Array.isArray(window.__wbSequence) && window.__wbSequence.indexOf('leave') >= 0",
-                TimeSpan.FromSeconds(5),
-                "compat alias 経由の handleSkinLeave 完了を待てませんでした。"
-            );
-
-            string lifecycleJson = await ReadJsonStringAsync(
+            string clearLifecycleJson = await ReadJsonStringAsync(
                 webView,
                 "JSON.stringify(window.__wbSequence)"
             );
             return RuntimeBridgeLifecycleVerificationResult.Succeeded(
-                DeserializeStringArray(lifecycleJson)
+                DeserializeStringArray(focusLifecycleJson)
+                    .Concat(DeserializeStringArray(handleLifecycleJson))
+                    .Concat(DeserializeStringArray(clearLifecycleJson))
+                    .ToArray()
             );
         }
         finally
@@ -5837,7 +5851,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 (() => {
                   window.__wbDone = false;
                   window.__wbError = "";
-                  // skin 側が compat 本体を誤って壊しても、C# からの reject は固定 alias で救う。
+                  // skin 側が compat 本体を誤って壊しても、C# からの reject は固定 alias fallback で救う。
                   window.__immWbCompat = {};
                   wb.focusThum(90).then(function () {
                     window.__wbError = "resolved";
@@ -10244,7 +10258,6 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 """
                 (async () => {
                   window.__immTagInputMissingThenResult1 = await wb.changeSkin('MissingSkin');
-                  window.__immTagInputMissingThenResult2 = await wb.changeSkin('#umlFindTreeEve');
                 })();
                 """
             );
@@ -10253,8 +10266,23 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 webView,
                 """
                 window.__immTagInputMissingThenResult1 === false
-                  && window.__immTagInputMissingThenResult2 === true
-                  && document.getElementById('footer')
+                """,
+                TimeSpan.FromSeconds(5),
+                $"TagInputRelation の Get後 {callbackName} missing changeSkin 結果を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  await wb.changeSkin('#umlFindTreeEve');
+                })();
+                """
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('footer')
                   && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
                   && document.getElementById('uml')
                   && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
@@ -10262,7 +10290,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                   && document.querySelectorAll('#Selection li').length === 0
                 """,
                 TimeSpan.FromSeconds(10),
-                $"TagInputRelation の Get後 {callbackName} missing->umlFindTreeEve changeSkin 完了を待てませんでした。"
+                $"TagInputRelation の Get後 {callbackName} umlFindTreeEve changeSkin 完了を待てませんでした。"
             );
 
             return await ReadCrossSkinDomSnapshotAsync(webView, currentSkinName);

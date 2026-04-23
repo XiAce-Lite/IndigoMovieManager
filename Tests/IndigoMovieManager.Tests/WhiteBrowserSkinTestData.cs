@@ -131,6 +131,19 @@ internal static class WhiteBrowserSkinTestData
     internal static string GetFixtureHtmlPath(string skinRootPath, string fixtureName)
     {
         string fixtureDirectoryPath = Path.Combine(skinRootPath, fixtureName);
+        if (!Directory.Exists(fixtureDirectoryPath))
+        {
+            if (string.Equals(fixtureName, "MissingSkin", StringComparison.OrdinalIgnoreCase))
+            {
+                // changeSkin 失敗テストの sentinel は、呼び出し側の false 解決へ自然に流す。
+                return "";
+            }
+
+            throw new DirectoryNotFoundException(
+                $"fixture フォルダが見つかりません: {fixtureDirectoryPath}"
+            );
+        }
+
         string[] htmlPaths = Directory
             .EnumerateFiles(fixtureDirectoryPath, "*.htm")
             .Concat(Directory.EnumerateFiles(fixtureDirectoryPath, "*.html"))

@@ -12,12 +12,13 @@
 - 判定基準:
   - 固定済み: MainWindow 実 host と runtime bridge 実 host の両方で、同じ境界条件を回帰テストまたは focused で再現確認できている。
   - 未固定: どちらか片側だけ green、または直列遷移で timeout / fail-fast が混ざる。
-- 2026-04-23 時点の読み順:
+- 2026-04-24 時点の読み順:
   - 両実 host で固定済み: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` と `changeSkin success / failure` の主要境界。
     - `runtime bridge` 側は、`tag / thumb` の terminal rerender まで固定済み。
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
-  - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（bare / Save後 の `TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-23 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
-- 2026-04-23 追記: `da6a22b` の compat alias fallback 固定と `0a9fd64` の lifecycle pending 応答補強に加え、`22cf0bd` で `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` が focused 2 件 green になった。
+  - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（bare の `TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-24 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
+- 2026-04-23 追記: `da6a22b` の compat alias fallback 固定と `0a9fd64` の lifecycle pending 応答補強に加え、`22cf0bd` のテストハーネス側安定化で `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` が focused 2 件 green になった。
+- 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green になり、runtime bridge の `Save後` 直列は未固定一覧から外した。
 - 2026-04-23 追記: `7fd9312` で close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused green に更新した。MainWindow 側の未固定領域は「close 競合全般」ではなく、一部 exact シナリオの fail-fast 残差として読む。
 - 詳細の正本:
   - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-23 時点の固定状況インデックス」を正本として扱う。
@@ -498,7 +499,7 @@
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`ButtonGet()` 後に `onSkinLeave` を挟んでから `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補表示空の拡張終端状態を保てることを確認した。候補拡張後 leave 終端の失敗側も no-op として扱える。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`ButtonGet()` 後に `onClearAll` を挟んでから `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補表示空の拡張終端状態を保てることを確認した。候補拡張後 clear 終端の失敗側も no-op として扱える。
 - 2026-04-19: `TagInputRelation` は runtime bridge 実 host でも、`ButtonGet()` 後に `onSkinLeave` / `onClearAll` を挟んで `wb.changeSkin("MissingSkin")` が `false` を返した直後に `wb.changeSkin("#umlFindTreeEve")` しても、入力欄と候補表示を tree / footer 側へ持ち越さないことを focused 2 件通過で確認した。Get terminal の failure -> success 直列境界も bridge 正本で揃った。
-- 2026-04-20: `TagInputRelation` の runtime bridge 実 host における `Include / Save -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` は、`failure 単体` と `success 単体` は green だが、直列では最初の `MissingSkin` 結果待ち自体が安定しなかった。2026-04-22 に `Save -> onClearAll/onSkinLeave -> MissingSkin -> #umlFindTreeEve` の単独 1 件へ絞っても、どちらも直列前提の `Save後終端状態` 待機から揺れたため、無理に main へ入れず未固定の直列境界として分離を継続する。
+- 2026-04-24: `TagInputRelation` の runtime bridge 実 host における `Include / Save -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` は、focused 2 件 green を確認した。`Save後` 直列は未固定一覧から外し、残差は bare / `umiFindTreeEve` / build 出力 skin 4 本へ絞って扱う。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後の dirty state のまま `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補 4 件の保存後状態を保てることを focused 3 件通過で確認した。保存後の失敗側も no-op として扱える。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後に `onSkinLeave` を挟んでから `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補 4 件の保存後終端状態を保てることを確認した。保存後 leave 終端の失敗側も no-op として扱える。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後に `onClearAll` を挟んでから `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補 4 件の保存後終端状態を保てることを確認した。保存後 clear 終端の失敗側も no-op として扱える。
@@ -599,7 +600,8 @@
 - 2026-04-21: `TagInputRelation` は runtime bridge 実 host でも、bare な `onSkinLeave` または `onClearAll` の直後に `wb.changeSkin("#umlFindTreeEve")` しても、初期候補 3 件ベースの終端状態から `#input / #Selection` を tree / footer 側へ持ち越さないことを focused 2 件通過で確認した。bare terminal の success 境界も bridge 正本で押さえた。
 - 2026-04-22: `TagInputRelation` の runtime bridge 実 host における bare な `onSkinLeave/onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#umlFindTreeEve")` は、新規 2 件とも `umlFindTreeEve` 側の完了待ちが timeout した。`failure 単体` と `success 単体` は green でも、bare terminal の failure -> success 直列はまだ未固定として分離する。
 - 2026-04-22: `TagInputRelation` の runtime bridge 実 host における bare な `onClearAll -> wb.changeSkin("MissingSkin") -> wb.changeSkin("#umlFindTreeEve")` は、代表 1 ケースだけへ再度絞っても `umlFindTreeEve` 側の完了待ちが timeout した。bare terminal の failure -> success 直列は、束ね方ではなく直列遷移そのものが未固定だと判断する。
-- 2026-04-23: `22cf0bd` により `MissingSkin` センチネルの false 解決を堅牢化し、runtime bridge 実 host の `TagInputRelation Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` は focused 2 件 green になった。`Get後` 直列は未固定一覧から外し、残る直列残差は bare / Save後 / `umiFindTreeEve` / build 出力 skin 4 本へ絞って扱う。
+- 2026-04-23: `22cf0bd` によりテストハーネス側の `MissingSkin` sentinel false 解決待ちを安定化し、runtime bridge 実 host の `TagInputRelation Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` は focused 2 件 green になった。`Get後` 直列は未固定一覧から外した。
+- 2026-04-24: `TagInputRelation` の runtime bridge 実 host における `Save後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")` も focused 2 件 green になった。残る直列残差は bare / `umiFindTreeEve` / build 出力 skin 4 本へ絞って扱う。
 - 2026-04-23: `7fd9312` により close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused green で固定した。MainWindow 側 fail-fast は残るが、close 競合そのものと区別して読む。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> onSkinLeave/onClearAll -> wb.changeSkin("#TagInputRelation")` は、新規 2 件自体は通るものの focused 束の teardown で `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざった。runtime bridge 側は green だが、MainWindow 側はまだ未固定の success 境界として分離する。
 - 2026-04-22: `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> onSkinLeave -> Refresh() -> wb.changeSkin("#TagInputRelation")` は、さらに代表 1 ケースへ絞っても `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash で落ちた。focused 束だけの問題ではなく、MainWindow 側 teardown を含む未固定の success 境界として扱う。

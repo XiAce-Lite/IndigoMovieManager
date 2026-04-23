@@ -1,6 +1,6 @@
 # Implementation Plan: skin切り替え高速化 DB保存分離先行 2026-04-13
 
-最終更新日: 2026-04-23
+最終更新日: 2026-04-24
 
 変更概要:
 - 全体プラン見直しを受けて、`skin` 切り替え高速化の中で DB を「先頭の決定打」ではなく「第2群の土台施策」として位置づけ直した
@@ -27,8 +27,9 @@
 - runtime bridge の compat dispatch は、`__immWbCompat` が壊れても `__immWbCompatBridge` へ確実に落とす alias fallback を固定した（`da6a22b`）
 - lifecycle 系 focused テストは、`getSelectThums` の pending 応答を補って待機取りこぼしを減らした（`0a9fd64`）
 - `7fd9312` で close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused で固定した
-- `22cf0bd` で `MissingSkin` の false 解決を堅牢化し、runtime bridge 実 host の `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` を focused 2 件 green へ更新した
-- ただし未固定の主戦場はまだ残るため、`runtime bridge` の bare / Save後 / build出力 skin 4 本 / `umiFindTreeEve` の serial timeout と、MainWindow 側の一部 fail-fast 残差は継続監視する
+- `22cf0bd` では、テストハーネス側で `MissingSkin` sentinel の false 解決待ちを安定化し、runtime bridge 実 host の `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` を focused 2 件 green へ更新した
+- 2026-04-24 に `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green を確認し、runtime bridge 側の `Save後` 直列を未固定一覧から外した
+- ただし未固定の主戦場はまだ残るため、`runtime bridge` の bare / build出力 skin 4 本 / `umiFindTreeEve` の serial timeout と、MainWindow 側の一部 fail-fast 残差は継続監視する
 
 ## 1. 結論
 
@@ -583,15 +584,15 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 ### 13.3 runtime bridge 側が未固定
 
 - 2026-04-23 追記: `da6a22b` と `0a9fd64` で compat alias fallback と lifecycle pending 応答を補強したが、これは pending 解決の取りこぼし防止である。`MissingSkin -> success` 直列 timeout の未固定判定は維持する。
-- 2026-04-23 追記: `22cf0bd` で `MissingSkin` センチネルの false 解決を堅牢化し、`TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` は focused 2 件 green へ更新した。runtime bridge 側の未固定は bare / Save後 / build出力 skin 4 本 / `umiFindTreeEve` へ狭まった。
+- 2026-04-23 追記: `22cf0bd` ではテストハーネス側の `MissingSkin` sentinel 解決待ちを安定化し、`TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` は focused 2 件 green へ更新した。
+- 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green を確認した。runtime bridge 側の未固定は bare / build出力 skin 4 本 / `umiFindTreeEve` へ狭まった。
 - `TagInputRelation` の runtime bridge 直列は、2026-04-23 時点で次の切り分けを正本とする
   - bare terminal: `failure` 単体 / `success` 単体は green、`MissingSkin -> #umlFindTreeEve` は timeout
   - `Get後`: `terminal -> success` / `terminal -> failure` / `terminal -> MissingSkin -> success` は green
-  - `Save後`: `terminal -> success` と `terminal -> failure` は green、`terminal -> MissingSkin -> success` は `Save後終端状態` 待機から揺れる
+  - `Save後`: `terminal -> success` / `terminal -> failure` / `terminal -> MissingSkin -> success` は green
 
 - `TagInputRelation` の runtime bridge 実 host における bare terminal (`onClearAll/onSkinLeave`) 後の `MissingSkin -> #umlFindTreeEve` 直列は、2 件とも `umlFindTreeEve` 側の完了待ちが timeout するため未固定
 - 上記のうち `onClearAll -> MissingSkin -> #umlFindTreeEve` は、2026-04-22 に代表 1 ケースだけ再試行しても同じ timeout で再現したため、待機条件ではなく直列遷移そのものが未固定だと判断する
-- `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定。2026-04-22 時点では `Save -> onClearAll/onSkinLeave -> MissingSkin -> #umlFindTreeEve` の単独 1 件へ絞っても、どちらも直列前提の `Save後終端状態` 待機から揺れが出る
 - build 出力 skin 4 本の runtime bridge 実 host における `onUpdateThum -> onSkinLeave -> MissingSkin -> success` も、4 件とも 2 回目 `changeSkin` 完了待ちが timeout するため未固定
 - build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
 - 上記のうち `Search_table + onSkinLeave -> MissingSkin -> DefaultSmallWB` を代表 1 ケースだけ再試行しても、次 skin の tag baseline 復帰待ちが timeout したため、bundle 依存ではなく runtime bridge の serial timeout と判断する

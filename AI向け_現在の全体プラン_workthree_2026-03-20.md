@@ -46,6 +46,7 @@
 - `Everything poll` は low-update 時の間隔延長、watch folder snapshot、eligible 判定再利用、重複 path 除去まで入り、通常周回の判定コストを一段落とした
 - `Watcher.cs` はさらに、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`folder completion`、`run finish`、`folder failure recovery result` を helper / runtime 側へ寄せ、入口・中盤・終端を段単位で薄くした
 - `Watcher` の flow 制御は `WatchLoopDecision` を共通の戻り値として揃え、`return / break / continue` の判定を helper 経由で追える形へ寄せた
+- さらに `watch folder` 解決、`scan 準備`、`movie loop preparation`、`loop decision await/apply`、`folder phase result`、`run finish` 呼び出しを helper 化し、`CheckFolderAsync(...)` は「フォルダを選ぶ -> scan を準備する -> loop / flush / finish を順に流す」形へ近づいた
 - `scan strategy 通知` と `scan mode 診断` は runtime 側で束ね、`Watcher.cs` 側は通知実行の入口だけを見る形へ整理した
 - `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で直す方針を固定した。無通信 timer は shutdown safety fuse としてのみ扱う
 
@@ -211,6 +212,7 @@
 - `CheckFolderAsync` 内の per-file `new/existing` 分岐も `ProcessScannedMovieAsync(...)` として `WatchScanCoordinator` へ寄せ始めた
 - `CheckFolderAsync` の入口では `watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` を helper / policy 1 呼び出しへまとめ、`Watcher.cs` 側の引数直書きと一時変数をさらに減らした
 - `CheckFolderAsync` の入口・中盤・終端では、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`final queue flush`、`run finish`、`folder failure recovery result` も helper / runtime 1 呼び出しへ寄せ、`Watcher.cs` 側の直書きと局所 if をさらに減らした
+- 直近では `watch folder` 解決、`PrepareWatchFolderScanAsync(...)`、`TryBeginWatchFolderMovieLoop(...)`、`AwaitAndApplyWatchLoopDecisionAsync(...)`、`TryHandleWatchFolderPhaseResult(...)`、`TryFinishWatchRunAndReturnAsync(...)` を入れ、入口から終端までの flow 判定を同じ形へそろえた
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
 - rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった

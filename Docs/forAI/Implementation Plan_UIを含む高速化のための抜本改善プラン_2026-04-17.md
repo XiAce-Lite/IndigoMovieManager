@@ -48,6 +48,7 @@
 - `Everything poll` は watch folder snapshot、eligible 判定再利用、重複 path 除去、low-update 時の間隔延長まで入り、通常周回の CPU / wakeup コストを下げ始めた
 - `Watcher.cs` はさらに、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`folder completion`、`run finish`、`folder failure recovery result` を helper / runtime 側へ寄せ、入口・中盤・終端を段単位で薄くした
 - `WatchLoopDecision` を `movie loop` と `pending flush` の共通戻り値へ揃え、`return / break / continue` の flow を同じ読み筋で追える形へ寄せた
+- `watch folder` 解決、`scan 準備`、`movie loop preparation`、`loop decision await/apply`、`folder phase result`、`run finish` 呼び出しも helper 化し、`CheckFolderAsync(...)` は段ごとの orchestration を読む形へさらに近づいた
 - `scan strategy 通知` と `scan mode 診断` は runtime 側で束ね、`Watcher.cs` 側は orchestration と通知入口に専念する形へ整理した
 
 ## 1. 目的
@@ -163,6 +164,7 @@
 - `CheckFolderAsync(...)` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を coordinator / policy / runtime へ寄せる。
 - `QueueCheckFolderAsync(...)` と `ProcessCheckFolderQueueAsync(...)` の入口を薄くし、mode 圧縮や dispatcher 判断を専用 helper へ寄せる。
 - 直近到達点として、`watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` に加え、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`run finish`、`folder failure recovery result` も helper / runtime 1 呼び出しへ寄せ終わっている。次は runtime context 生成後の小粒な受け渡しと `final dispatch` 手前の局所分岐をさらに減らす。
+- さらに `watch folder` 解決、`PrepareWatchFolderScanAsync(...)`、`TryBeginWatchFolderMovieLoop(...)`、`AwaitAndApplyWatchLoopDecisionAsync(...)`、`TryHandleWatchFolderPhaseResult(...)`、`TryFinishWatchRunAndReturnAsync(...)` を追加し、`CheckFolderAsync(...)` の各段の入口と出口を同じ読み筋へ寄せた。
 
 完了条件:
 - `Watcher.cs` の責務を短く説明できる。

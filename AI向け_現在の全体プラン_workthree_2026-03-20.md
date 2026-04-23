@@ -187,6 +187,8 @@
 - `Created` は直接 MainDB 登録せず、watch 本流の `QueueCheckFolderAsync(CheckMode.Watch, ...)` へ合流済み
 - `Renamed` は watch event queue 経由で単一ランナー処理へ変更済み
 - `WatcherEventQueue` は処理 task を 1 本共有し、enqueue ごとに runner を増やさない形へ寄せて watch burst 時の先頭詰まり増幅を抑えた
+- `Created` の ready 待機は queue runner から分離して直列専用パイプラインへ逃がし、`Renamed` が `Created` 待ちで詰まらないように整合を補強した
+- 旧パス未登録の `Renamed` は `QueueCheckFolderAsync(CheckMode.Watch, ...)` へ再合流させ、`Created -> Renamed` 連鎖の取りこぼしを watch 本流で回収する形へ寄せた
 - watch 終端の全件 `FilterAndSort(..., true)` は `CheckMode.Watch` 時のみ debounce 済み
 - `skin` 切り替えは `ApplySkinByName(...)` からの明示 refresh queue を外し、`DbInfo.Skin` 変化を正本へ寄せた
 - `skin` refresh は stale 判定を開始直後、definition 解決後、prepare 中、apply 前へ前倒しした

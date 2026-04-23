@@ -431,7 +431,7 @@ namespace IndigoMovieManager
             }
 
             if (
-                await FinishWatchRunAsync(
+                await TryFinishWatchRunAndReturnAsync(
                     watchStoppedByUiSuppression,
                     FolderCheckflg,
                     mode,
@@ -484,6 +484,40 @@ namespace IndigoMovieManager
 
             shouldBreakCurrentFolder = shouldBreakByUiSuppression;
             return false;
+        }
+
+        // 走査全体の finish 実行を 1 入口へ寄せ、CheckFolderAsync 末尾の形を揃える。
+        private Task<bool> TryFinishWatchRunAndReturnAsync(
+            bool watchStoppedByUiSuppression,
+            bool folderCheckFlag,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            int snapshotTabIndex,
+            bool canUseQueryOnlyWatchReload,
+            List<WatchChangedMovie> changedMoviesForUiReload,
+            long snapshotWatchScanScopeStamp,
+            int checkedFolderCount,
+            int enqueuedCount,
+            Stopwatch sw
+        )
+        {
+            return FinishWatchRunAsync(
+                watchStoppedByUiSuppression,
+                folderCheckFlag,
+                mode,
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                snapshotTabIndex,
+                canUseQueryOnlyWatchReload,
+                changedMoviesForUiReload,
+                snapshotWatchScanScopeStamp,
+                checkedFolderCount,
+                enqueuedCount,
+                sw
+            );
         }
 
         // movie loop 入口の準備判定を 1 入口へ寄せ、Watcher 本体の中盤を読みやすくする。

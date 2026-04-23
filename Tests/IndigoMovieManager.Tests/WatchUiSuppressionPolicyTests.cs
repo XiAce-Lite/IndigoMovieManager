@@ -285,6 +285,39 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void EndUserPriorityWork_watch延期はsuppressionなしでもcatch_upをQueueする()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_userPriorityWorkSync", new object());
+        SetPrivateField(window, "_checkFolderRequestSync", new object());
+        SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(0, 1));
+
+        List<string> queuedTriggers = [];
+        window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+        {
+            queuedTriggers.Add($"{mode}:{trigger}");
+        };
+
+        InvokeVoid(window, "BeginUserPriorityWork", "search");
+        InvokeVoid(window, "QueueCheckFolderAsync", ParseCheckMode("Watch"), "created:movie");
+
+        Assert.That(queuedTriggers, Is.Empty);
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.True
+        );
+
+        InvokeVoid(window, "EndUserPriorityWork", "search");
+
+        Assert.That(queuedTriggers, Is.EqualTo(["Watch:user-priority-resume:search"]));
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_suppression中は最後のFilterAndSortを走らせずdeferへ戻す()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();

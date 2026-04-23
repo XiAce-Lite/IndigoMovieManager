@@ -203,7 +203,7 @@ public partial class MainWindow
 
         if (shouldDeferFullReconcileByUserPriority)
         {
-            MarkWatchWorkDeferredWhileSuppressed($"watch-zero-diff-reconcile:{checkFolder}");
+            MarkWatchWorkDeferredForBackgroundCatchUp($"watch-zero-diff-reconcile:{checkFolder}");
             DebugRuntimeLog.Write(
                 "watch-check",
                 $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"

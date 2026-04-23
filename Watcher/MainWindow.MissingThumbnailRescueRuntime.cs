@@ -57,7 +57,7 @@ namespace IndigoMovieManager
 
             if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
             {
-                MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
+                MarkWatchWorkDeferredForBackgroundCatchUp($"missing-thumb-rescue:{mode}");
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"skip missing-thumb rescue by suppression: mode={mode} db='{snapshotDbFullPath}'"
@@ -218,7 +218,7 @@ namespace IndigoMovieManager
 
             if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
             {
-                MarkWatchWorkDeferredWhileSuppressed("missing-thumb-rescue:enqueue");
+                MarkWatchWorkDeferredForBackgroundCatchUp("missing-thumb-rescue:enqueue");
                 return;
             }
 

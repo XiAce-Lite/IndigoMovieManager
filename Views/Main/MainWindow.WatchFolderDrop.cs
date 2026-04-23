@@ -258,6 +258,12 @@ namespace IndigoMovieManager
             }
 
             GetWatchTable(MainVM.DbInfo.DBFullPath, watchTableSql);
+            if (result.DirectoriesToAdd.Count > 0)
+            {
+                // 直接追加した監視フォルダを次回pollへ反映するため、キャッシュを捨てる。
+                InvalidateEverythingWatchPollWatchFolderSnapshot();
+            }
+
             ShowDroppedWatchFolderToast(result);
         }
 

@@ -27,7 +27,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                MarkWatchWorkDeferredWhileSuppressed($"check-start-user-priority:{mode}");
+                MarkWatchWorkDeferredForBackgroundCatchUp($"check-start-user-priority:{mode}");
                 return true;
             }
 
@@ -202,6 +202,25 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"watch work deferred by ui suppression: trigger={trigger}"
+                );
+            }
+        }
+
+        // ユーザー優先で後ろへ逃がしたwatch仕事は、UI抑止中でなくても解除後のcatch-upへ必ず戻す。
+        private void MarkWatchWorkDeferredForBackgroundCatchUp(string trigger)
+        {
+            bool shouldLog = false;
+            lock (_watchUiSuppressionSync)
+            {
+                shouldLog = !_watchWorkDeferredWhileSuppressed;
+                _watchWorkDeferredWhileSuppressed = true;
+            }
+
+            if (shouldLog)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"watch work deferred for background catch-up: trigger={trigger}"
                 );
             }
         }

@@ -5424,6 +5424,12 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
 
             runtimeBridge.WebMessageReceived += (_, e) =>
             {
+                if (string.Equals(e.Method, "getSelectThums", StringComparison.Ordinal))
+                {
+                    _ = runtimeBridge.ResolveRequestAsync(e.MessageId, new[] { 90 });
+                    return;
+                }
+
                 if (!string.Equals(e.Method, "focusThum", StringComparison.Ordinal))
                 {
                     return;

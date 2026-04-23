@@ -171,6 +171,18 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.5")]
+        public double PlayerVolume {
+            get {
+                return ((double)(this["PlayerVolume"]));
+            }
+            set {
+                this["PlayerVolume"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("7")]
         public int RecentFilesCount {
             get {

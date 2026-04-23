@@ -26,6 +26,7 @@ namespace IndigoMovieManager
         private bool _pendingWebViewPlayImmediately;
         private bool _pendingWebViewMute;
         private bool _isWebViewPlayerActive;
+        private bool _isWebViewPlayerBridgeRegistered;
         private string _currentPlayerMoviePath = "";
         private string _currentWebViewPlayerPath = "";
 
@@ -217,7 +218,9 @@ namespace IndigoMovieManager
                 SyncUpperTabPlayerSelection(movie);
             }
 
-            if (IsWebViewPreferredPlayerPath(movie.Movie_Path))
+            // プレイヤータブの通常再生は WebView2 を正面採用し、
+            // 手動サムネ位置合わせだけ従来の MediaElement を残す。
+            if (ShouldUseWebViewPlayerForPlayerTab(focusTimeSlider))
             {
                 await OpenMovieInWebViewPlayerAsync(
                     movie,
@@ -384,6 +387,12 @@ namespace IndigoMovieManager
             PlayerController.Visibility = _isWebViewPlayerActive
                 ? Visibility.Collapsed
                 : Visibility.Visible;
+            if (PlayerWebViewActionBar != null)
+            {
+                PlayerWebViewActionBar.Visibility = _isWebViewPlayerActive
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
             uxVideoPlayer.Visibility = _isWebViewPlayerActive
                 ? Visibility.Collapsed
                 : Visibility.Visible;
@@ -401,6 +410,11 @@ namespace IndigoMovieManager
 
         private void ShowPlayerEmptyState()
         {
+            if (PlayerWebViewActionBar != null)
+            {
+                PlayerWebViewActionBar.Visibility = Visibility.Collapsed;
+            }
+
             if (PlayerEmptyState != null)
             {
                 PlayerEmptyState.Visibility = Visibility.Visible;
@@ -605,18 +619,40 @@ namespace IndigoMovieManager
             await ApplyPendingWebViewPlaybackRequestAsync();
         }
 
-        private static bool IsWebViewPreferredPlayerPath(string moviePath)
+        private void UxWebVideoPlayer_WebMessageReceived(
+            object sender,
+            CoreWebView2WebMessageReceivedEventArgs e
+        )
         {
-            if (string.IsNullOrWhiteSpace(moviePath))
+            const string playerVolumeMessagePrefix = "player-volume:";
+            string message = e.TryGetWebMessageAsString();
+            if (
+                string.IsNullOrWhiteSpace(message)
+                || !message.StartsWith(playerVolumeMessagePrefix, System.StringComparison.Ordinal)
+            )
             {
-                return false;
+                return;
             }
 
-            return string.Equals(
-                Path.GetExtension(moviePath),
-                ".webm",
-                System.StringComparison.OrdinalIgnoreCase
-            );
+            string volumeText = message[playerVolumeMessagePrefix.Length..];
+            if (
+                !double.TryParse(
+                    volumeText,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out double volume
+                )
+            )
+            {
+                return;
+            }
+
+            SyncPlayerVolumeFromWebView(volume);
+        }
+
+        private static bool ShouldUseWebViewPlayerForPlayerTab(bool focusTimeSlider)
+        {
+            return !focusTimeSlider;
         }
 
         private async Task<bool> EnsureWebVideoPlayerReadyAsync()
@@ -635,6 +671,7 @@ namespace IndigoMovieManager
 
                 // 既に既定環境で初期化済みの可能性があるため、追加の環境指定はせず既定経路へ揃える。
                 await uxWebVideoPlayer.EnsureCoreWebView2Async();
+                await EnsureWebVideoPlayerBridgeAsync();
                 return true;
             }
             catch (WebView2RuntimeNotFoundException)
@@ -643,10 +680,73 @@ namespace IndigoMovieManager
                     "WebM 再生には WebView2 Runtime が必要です。",
                     "プレイヤー",
                     MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
+                MessageBoxImage.Warning
+            );
                 return false;
             }
+        }
+
+        // 動画ページへ共通の見た目と通知橋を注入し、音量変更を次の動画にも流す。
+        private async Task EnsureWebVideoPlayerBridgeAsync()
+        {
+            if (_isWebViewPlayerBridgeRegistered || uxWebVideoPlayer?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            uxWebVideoPlayer.CoreWebView2.WebMessageReceived += UxWebVideoPlayer_WebMessageReceived;
+            await uxWebVideoPlayer.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+                """
+                (() => {
+                  const bindPlayer = () => {
+                    const player = document.querySelector('video');
+                    if (!player || player.dataset.indigoPlayerBound === '1') {
+                      return;
+                    }
+
+                    player.dataset.indigoPlayerBound = '1';
+                    document.documentElement.style.background = '#000';
+                    document.documentElement.style.height = '100%';
+                    document.body.style.margin = '0';
+                    document.body.style.background = '#000';
+                    document.body.style.height = '100%';
+                    document.body.style.overflow = 'hidden';
+                    player.style.width = '100vw';
+                    player.style.height = '100vh';
+                    player.style.objectFit = 'contain';
+                    player.style.background = '#000';
+                    player.controls = true;
+
+                    const notifyVolume = () => {
+                      try {
+                        chrome.webview.postMessage(`player-volume:${player.volume}`);
+                      } catch {}
+                    };
+
+                    player.addEventListener('volumechange', notifyVolume);
+                    player.addEventListener('dblclick', () => {
+                      if (player.requestFullscreen) {
+                        player.requestFullscreen();
+                      }
+                    });
+
+                    notifyVolume();
+                  };
+
+                  if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', bindPlayer, { once: true });
+                  } else {
+                    bindPlayer();
+                  }
+
+                  new MutationObserver(bindPlayer).observe(document.documentElement, {
+                    childList: true,
+                    subtree: true
+                  });
+                })();
+                """
+            );
+            _isWebViewPlayerBridgeRegistered = true;
         }
 
         private async Task PauseWebViewPlayerAsync()
@@ -693,6 +793,42 @@ namespace IndigoMovieManager
             }
 
             uxWebVideoPlayer.Visibility = Visibility.Collapsed;
+        }
+
+        // WebView2 の video 要素へ直接 full screen を要求し、表示だけは枠外へ広げる。
+        private async void PlayerWebViewFullscreenButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isWebViewPlayerActive || uxWebVideoPlayer?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await uxWebVideoPlayer.ExecuteScriptAsync(
+                    """
+                    (() => {
+                      const target = document.querySelector('video') ?? document.documentElement;
+                      if (!target) {
+                        return;
+                      }
+
+                      if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                        return;
+                      }
+
+                      if (target.requestFullscreen) {
+                        target.requestFullscreen();
+                      }
+                    })();
+                    """
+                );
+            }
+            catch
+            {
+                // 失敗しても通常表示は維持する。
+            }
         }
     }
 }

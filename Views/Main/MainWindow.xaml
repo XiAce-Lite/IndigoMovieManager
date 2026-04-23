@@ -751,11 +751,35 @@
                             <wv2:WebView2
                               x:Name="uxWebVideoPlayer"
                               Grid.Row="0"
-                              HorizontalAlignment="Center"
+                              HorizontalAlignment="Stretch"
                               NavigationCompleted="UxWebVideoPlayer_NavigationCompleted"
-                              VerticalAlignment="Center"
+                              VerticalAlignment="Stretch"
                               Visibility="Collapsed"
                             />
+                            <Border
+                              x:Name="PlayerWebViewActionBar"
+                              Grid.Row="0"
+                              Margin="0,8,8,0"
+                              Padding="4"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Top"
+                              Background="#66000000"
+                              CornerRadius="8"
+                              Visibility="Collapsed"
+                              Panel.ZIndex="10"
+                            >
+                              <Button
+                                Width="36"
+                                Height="36"
+                                Padding="0"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="PlayerWebViewFullscreenButton_Click"
+                                Content="{materialDesign:PackIcon Kind=ArrowExpandAll}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="全画面"
+                              />
+                            </Border>
                             <StackPanel
                               x:Name="PlayerController"
                               Grid.Row="1"

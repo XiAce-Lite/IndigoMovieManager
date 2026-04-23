@@ -18,6 +18,64 @@ namespace IndigoMovieManager
         private bool _isTimeSliderSyncingFromPlayer;
         private bool _isTimeSliderDragging;
         private bool _isManualPlayerResizeTrackingHooked;
+        private bool _isPlayerVolumeSyncingFromWebView;
+
+        // 保存済み設定が壊れていても、音量は常に 0.0 から 1.0 の安全域へ戻す。
+        private static double ClampPlayerVolumeSetting(double volume)
+        {
+            if (double.IsNaN(volume) || double.IsInfinity(volume))
+            {
+                return 0.5d;
+            }
+
+            return Math.Max(0d, Math.Min(1d, volume));
+        }
+
+        // 画面表示と保存値を同じ音量へ寄せ、次に開く動画にもそのまま引き継ぐ。
+        private void ApplyPlayerVolumeSetting(double volume, bool pushToWebView)
+        {
+            double resolvedVolume = ClampPlayerVolumeSetting(volume);
+
+            uxVideoPlayer.Volume = resolvedVolume;
+
+            if (uxVolume != null)
+            {
+                uxVolume.Text = ((int)(resolvedVolume * 100)).ToString();
+            }
+
+            Properties.Settings.Default.PlayerVolume = resolvedVolume;
+            Properties.Settings.Default.Save();
+
+            if (!pushToWebView || uxWebVideoPlayer?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            _ = uxWebVideoPlayer.ExecuteScriptAsync(
+                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; }}"
+            );
+        }
+
+        // WebView2 のネイティブ音量変更も設定へ戻し、以後の全動画へ同じ値を配る。
+        private void SyncPlayerVolumeFromWebView(double volume)
+        {
+            double resolvedVolume = ClampPlayerVolumeSetting(volume);
+
+            _isPlayerVolumeSyncingFromWebView = true;
+            try
+            {
+                if (uxVolumeSlider != null && Math.Abs(uxVolumeSlider.Value - resolvedVolume) > 0.0001d)
+                {
+                    uxVolumeSlider.Value = resolvedVolume;
+                }
+            }
+            finally
+            {
+                _isPlayerVolumeSyncingFromWebView = false;
+            }
+
+            ApplyPlayerVolumeSetting(resolvedVolume, pushToWebView: false);
+        }
 
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
@@ -368,6 +426,17 @@ namespace IndigoMovieManager
                 preferredLandscapeWidth = 0d;
             }
 
+            if (_isWebViewPlayerActive)
+            {
+                // WebView2 はプレイヤー枠いっぱいに広げ、内側余白だけを残して使い切る。
+                uxWebVideoPlayer.Width = availableWidth;
+                uxWebVideoPlayer.Height = availableHeight;
+                PlayerArea.Width = availableWidth;
+                PlayerArea.Height = availableHeight + controllerHeight;
+                PlayerController.Width = availableWidth;
+                return;
+            }
+
             Size viewportSize = ResolveManualPlayerViewportSize(
                 availableWidth,
                 availableHeight,
@@ -456,18 +525,17 @@ namespace IndigoMovieManager
             RoutedPropertyChangedEventArgs<double> e
         )
         {
-            if (_isWebViewPlayerActive)
+            double resolvedVolume = ClampPlayerVolumeSetting(uxVolumeSlider.Value);
+            if (Math.Abs(uxVolumeSlider.Value - resolvedVolume) > double.Epsilon)
             {
-                _ = uxWebVideoPlayer?.ExecuteScriptAsync(
-                    $"const player = document.querySelector('video'); if (player) {{ player.volume = {uxVolumeSlider.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}; }}"
-                );
+                uxVolumeSlider.Value = resolvedVolume;
+                return;
             }
 
-            uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            if (uxVolume != null)
-            {
-                uxVolume.Text = ((int)(uxVideoPlayer.Volume * 100)).ToString();
-            }
+            ApplyPlayerVolumeSetting(
+                resolvedVolume,
+                pushToWebView: _isWebViewPlayerActive && !_isPlayerVolumeSyncingFromWebView
+            );
         }
 
         /// <summary>

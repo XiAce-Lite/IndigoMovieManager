@@ -23,6 +23,7 @@
   xmlns:duplicateVideosTab="clr-namespace:IndigoMovieManager.UpperTabs.DuplicateVideos"
   xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
   xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+  xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
   x:Name="window"
   Title="Indigo Movie Manager"
   AllowDrop="True"
@@ -691,6 +692,338 @@
                         </DataTemplate>
                       </ListView.ItemTemplate>
                     </ListView>
+                  </TabItem>
+
+                  <TabItem x:Name="TabPlayer" Header="プレイヤー" Tag="player-grid-strip">
+                    <Grid x:Name="PlayerTabLayoutRoot" Margin="8,8,8,12" SizeChanged="PlayerTabLayoutRoot_SizeChanged">
+                      <Grid.RowDefinitions>
+                        <RowDefinition x:Name="PlayerTabTopRow" Height="*" />
+                        <RowDefinition x:Name="PlayerTabGapRow" Height="0" />
+                        <RowDefinition x:Name="PlayerTabBottomRow" Height="0" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="PlayerTabMainColumn" Width="*" />
+                        <ColumnDefinition x:Name="PlayerTabGapColumn" Width="16" />
+                        <ColumnDefinition x:Name="PlayerTabSideColumn" Width="280" />
+                      </Grid.ColumnDefinitions>
+
+                      <Border
+                        x:Name="PlayerSurfaceHost"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Padding="8"
+                        Background="{DynamicResource MaterialDesignPaper}"
+                        BorderBrush="{DynamicResource MaterialDesignDivider}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                      >
+                        <Grid>
+                          <Grid
+                            x:Name="PlayerArea"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
+                            Visibility="Collapsed"
+                          >
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="*" />
+                              <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.Effect>
+                              <DropShadowEffect
+                                BlurRadius="2"
+                                RenderingBias="Performance"
+                                ShadowDepth="10"
+                                Color="{DynamicResource PlayerShadowColor}"
+                              />
+                            </Grid.Effect>
+                            <MediaElement
+                              x:Name="uxVideoPlayer"
+                              Grid.Row="0"
+                              LoadedBehavior="Manual"
+                              MediaOpened="UxVideoPlayer_MediaOpened"
+                              PreviewMouseDown="UxVideoPlayer_PreviewMouseDown"
+                              ScrubbingEnabled="true"
+                              Stretch="Uniform"
+                              UnloadedBehavior="Stop"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                            />
+                            <wv2:WebView2
+                              x:Name="uxWebVideoPlayer"
+                              Grid.Row="0"
+                              HorizontalAlignment="Center"
+                              NavigationCompleted="UxWebVideoPlayer_NavigationCompleted"
+                              VerticalAlignment="Center"
+                              Visibility="Collapsed"
+                            />
+                            <StackPanel
+                              x:Name="PlayerController"
+                              Grid.Row="1"
+                              HorizontalAlignment="Stretch"
+                              Background="{DynamicResource PlayerControllerBackground}"
+                              Orientation="Horizontal"
+                              Visibility="Collapsed"
+                            >
+                              <RepeatButton
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="FR_Click"
+                                Content="{materialDesign:PackIcon Kind=Rewind}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="戻す"
+                              />
+                                <Button
+                                x:Name="PlayButton"
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="Start_Click"
+                                Content="{materialDesign:PackIcon Kind=Play}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="再生"
+                              />
+                              <RepeatButton
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="FF_Click"
+                                Content="{materialDesign:PackIcon Kind=FastForward}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="送る"
+                              />
+                              <Button
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="Pause_Click"
+                                Content="{materialDesign:PackIcon Kind=PauseBox}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="一時停止"
+                              />
+                              <Button
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="Capture_Click"
+                                Content="{materialDesign:PackIcon Kind=Camera}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="サムネイルの取得"
+                              />
+                              <Button
+                                Margin="5"
+                                Background="{x:Null}"
+                                BorderThickness="0"
+                                Click="AddBookmark_Click"
+                                Content="{materialDesign:PackIcon Kind=BookmarkAdd}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="ブックマークの追加"
+                              />
+                              <Slider
+                                x:Name="uxTimeSlider"
+                                Width="300"
+                                Height="20"
+                                Margin="5"
+                                IsSnapToTickEnabled="True"
+                                LostMouseCapture="UxTimeSlider_LostMouseCapture"
+                                PreviewMouseLeftButtonDown="UxTimeSlider_PreviewMouseLeftButtonDown"
+                                PreviewMouseLeftButtonUp="UxTimeSlider_PreviewMouseLeftButtonUp"
+                                SmallChange="2000"
+                                ToolTip="再生位置"
+                                ValueChanged="UxTimeSlider_ValueChanged"
+                                Value="0"
+                              />
+                              <TextBlock
+                                x:Name="uxTime"
+                                Width="Auto"
+                                Margin="20,0,0,0"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{DynamicResource HeaderForeground}"
+                                ToolTip="再生時刻"
+                              />
+                              <Slider
+                                x:Name="uxVolumeSlider"
+                                Width="50"
+                                Height="20"
+                                MinWidth="50"
+                                Margin="20,0,0,0"
+                                Maximum="1"
+                                Minimum="0"
+                                ToolTip="音量調整"
+                                ValueChanged="UxVolumeSlider_ValueChanged"
+                                Value="0.5"
+                              />
+                              <TextBlock
+                                x:Name="uxVolume"
+                                Width="40"
+                                MinWidth="40"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{DynamicResource HeaderForeground}"
+                                TextAlignment="Right"
+                                ToolTip="音量"
+                              />
+                              <Button
+                                Width="30"
+                                Height="30"
+                                Margin="20,0,0,0"
+                                Padding="0"
+                                Background="{x:Null}"
+                                BorderThickness="1"
+                                Click="Stop_Click"
+                                Content="{materialDesign:PackIcon Kind=Close}"
+                                Style="{StaticResource MaterialDesignIconButton}"
+                                ToolTip="終了"
+                              />
+                            </StackPanel>
+                          </Grid>
+
+                          <Border
+                            x:Name="PlayerEmptyState"
+                            Padding="24"
+                            Background="{DynamicResource MaterialDesignPaper}"
+                            BorderBrush="{DynamicResource MaterialDesignDivider}"
+                            BorderThickness="0"
+                            CornerRadius="6"
+                            Visibility="Visible"
+                          >
+                            <StackPanel VerticalAlignment="Center">
+                              <materialDesign:PackIcon
+                                Width="56"
+                                Height="56"
+                                HorizontalAlignment="Center"
+                                Kind="MovieOpenPlay"
+                                Opacity="0.75"
+                              />
+                              <TextBlock
+                                Margin="0,16,0,0"
+                                HorizontalAlignment="Center"
+                                FontSize="20"
+                                FontWeight="SemiBold"
+                                Foreground="{DynamicResource MaterialDesignBody}"
+                                Text="プレイヤー"
+                              />
+                              <TextBlock
+                                Margin="0,8,0,0"
+                                HorizontalAlignment="Center"
+                                Foreground="{DynamicResource MaterialDesignBody}"
+                                Opacity="0.8"
+                                Text="右のサムネイルを選ぶと、ここで再生します"
+                                TextAlignment="Center"
+                                TextWrapping="Wrap"
+                              />
+                            </StackPanel>
+                          </Border>
+                        </Grid>
+                      </Border>
+
+                      <Border
+                        x:Name="PlayerThumbnailHost"
+                        Grid.Row="0"
+                        Grid.Column="2"
+                        Padding="8"
+                        Background="{DynamicResource MaterialDesignPaper}"
+                        BorderBrush="{DynamicResource MaterialDesignDivider}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                      >
+                        <DockPanel LastChildFill="True">
+                          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <TextBlock
+                              FontSize="14"
+                              FontWeight="SemiBold"
+                              Foreground="{DynamicResource MaterialDesignBody}"
+                              Text="Grid サムネ 1列"
+                            />
+                            <TextBlock
+                              Margin="0,4,0,0"
+                              FontSize="12"
+                              Foreground="{DynamicResource MaterialDesignBody}"
+                              Opacity="0.78"
+                              Text="選択した動画を左のプレイヤーで開きます"
+                              TextWrapping="Wrap"
+                            />
+                          </StackPanel>
+
+                          <ListView
+                            x:Name="PlayerThumbnailList"
+                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                            SelectionChanged="PlayerThumbnailList_SelectionChanged"
+                            SelectionMode="Extended"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling"
+                          >
+                            <ListView.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <VirtualizingStackPanel
+                                  IsVirtualizing="True"
+                                  VirtualizationMode="Recycling"
+                                />
+                              </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+
+                            <ListView.ItemTemplate>
+                              <DataTemplate>
+                                <Border
+                                  Margin="0,0,0,8"
+                                  Padding="6"
+                                  Background="{DynamicResource MaterialDesignCardBackground}"
+                                  BorderBrush="{DynamicResource MaterialDesignDivider}"
+                                  BorderThickness="1"
+                                  CornerRadius="4"
+                                >
+                                  <StackPanel>
+                                    <Label
+                                      Width="240"
+                                      Height="180"
+                                      Padding="0"
+                                      BorderThickness="0"
+                                      Background="{DynamicResource ThumbImageBackground}"
+                                      ContextMenu="{StaticResource menuContext}"
+                                      MouseDown="Label_MouseDown"
+                                    >
+                                      <Image Stretch="Uniform">
+                                        <Image.Source>
+                                          <MultiBinding
+                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.GridDecodePixelHeight}"
+                                          >
+                                            <Binding Path="ThumbPathGrid" />
+                                            <Binding Path="IsExists" />
+                                            <Binding
+                                              Path="IsSelected"
+                                              RelativeSource="{RelativeSource AncestorType=TabItem}"
+                                            />
+                                          </MultiBinding>
+                                        </Image.Source>
+                                      </Image>
+                                    </Label>
+                                    <TextBlock
+                                      Margin="0,8,0,0"
+                                      FontSize="12"
+                                      FontWeight="SemiBold"
+                                      Foreground="{DynamicResource MaterialDesignBody}"
+                                      Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
+                                      TextTrimming="CharacterEllipsis"
+                                    />
+                                    <TextBlock
+                                      Margin="0,4,0,0"
+                                      FontSize="11"
+                                      Foreground="{DynamicResource MaterialDesignBody}"
+                                      Opacity="0.78"
+                                      Text="{Binding Movie_Length, UpdateSourceTrigger=PropertyChanged}"
+                                    />
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate>
+                            </ListView.ItemTemplate>
+                          </ListView>
+                        </DockPanel>
+                      </Border>
+                    </Grid>
                   </TabItem>
 
                   <TabItem x:Name="TabList" Header="List" Tag="56x42x5x1">
@@ -1780,156 +2113,5 @@
       TextElement.FontFamily="Yu Gothic UI"
     />
 
-    <StackPanel
-      x:Name="PlayerArea"
-      Width="Auto"
-      Height="Auto"
-      HorizontalAlignment="Center"
-      VerticalAlignment="Center"
-      Orientation="Vertical"
-      Visibility="Collapsed"
-    >
-      <StackPanel.Effect>
-        <DropShadowEffect
-          BlurRadius="2"
-          RenderingBias="Performance"
-          ShadowDepth="10"
-          Color="{DynamicResource PlayerShadowColor}"
-        />
-      </StackPanel.Effect>
-      <MediaElement
-        x:Name="uxVideoPlayer"
-        Grid.Row="0"
-        Width="900"
-        Height="Auto"
-        LoadedBehavior="Manual"
-        MediaOpened="UxVideoPlayer_MediaOpened"
-        PreviewMouseDown="UxVideoPlayer_PreviewMouseDown"
-        ScrubbingEnabled="true"
-        Stretch="Uniform"
-        UnloadedBehavior="Stop"
-      />
-      <StackPanel
-        x:Name="PlayerController"
-        Grid.Row="1"
-        Width="Auto"
-        Background="{DynamicResource PlayerControllerBackground}"
-        Orientation="Horizontal"
-        Visibility="Collapsed"
-      >
-        <RepeatButton
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="FR_Click"
-          Content="{materialDesign:PackIcon Kind=Rewind}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="戻す"
-        />
-        <Button
-          x:Name="PlayButton"
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="Start_Click"
-          Content="{materialDesign:PackIcon Kind=Play}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="再生"
-        />
-        <RepeatButton
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="FF_Click"
-          Content="{materialDesign:PackIcon Kind=FastForward}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="送る"
-        />
-        <Button
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="Pause_Click"
-          Content="{materialDesign:PackIcon Kind=PauseBox}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="一時停止"
-        />
-        <Button
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="Capture_Click"
-          Content="{materialDesign:PackIcon Kind=Camera}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="サムネイルの取得"
-        />
-        <Button
-          Margin="5"
-          Background="{x:Null}"
-          BorderThickness="0"
-          Click="AddBookmark_Click"
-          Content="{materialDesign:PackIcon Kind=BookmarkAdd}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="ブックマークの追加"
-        />
-        <Slider
-          x:Name="uxTimeSlider"
-          Width="300"
-          Height="20"
-          Margin="5"
-          IsSnapToTickEnabled="True"
-          LostMouseCapture="UxTimeSlider_LostMouseCapture"
-          PreviewMouseLeftButtonDown="UxTimeSlider_PreviewMouseLeftButtonDown"
-          PreviewMouseLeftButtonUp="UxTimeSlider_PreviewMouseLeftButtonUp"
-          SmallChange="2000"
-          ToolTip="再生位置"
-          ValueChanged="UxTimeSlider_ValueChanged"
-          Value="0"
-        />
-        <TextBlock
-          x:Name="uxTime"
-          Width="Auto"
-          Margin="20,0,0,0"
-          HorizontalAlignment="Center"
-          VerticalAlignment="Center"
-          Foreground="{DynamicResource HeaderForeground}"
-          ToolTip="再生時刻"
-        />
-        <Slider
-          x:Name="uxVolumeSlider"
-          Width="50"
-          Height="20"
-          MinWidth="50"
-          Margin="20,0,0,0"
-          Maximum="1"
-          Minimum="0"
-          ToolTip="音量調整"
-          ValueChanged="UxVolumeSlider_ValueChanged"
-          Value="0.5"
-        />
-        <TextBlock
-          x:Name="uxVolume"
-          Width="40"
-          MinWidth="40"
-          HorizontalAlignment="Center"
-          VerticalAlignment="Center"
-          Foreground="{DynamicResource HeaderForeground}"
-          TextAlignment="Right"
-          ToolTip="音量"
-        />
-        <Button
-          Width="30"
-          Height="30"
-          Margin="20,0,0,0"
-          Padding="0"
-          Background="{x:Null}"
-          BorderThickness="1"
-          Click="Stop_Click"
-          Content="{materialDesign:PackIcon Kind=Close}"
-          Style="{StaticResource MaterialDesignIconButton}"
-          ToolTip="終了"
-        />
-      </StackPanel>
-    </StackPanel>
   </Grid>
 </Window>

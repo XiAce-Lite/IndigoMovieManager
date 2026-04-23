@@ -96,6 +96,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => GetSelectedUpperTabSmallMovieRecord(),
                 UpperTabBigFixedIndex => GetSelectedUpperTabBigMovieRecord(),
                 UpperTabGridFixedIndex => GetSelectedUpperTabGridMovieRecord(),
+                PlayerTabIndex => GetSelectedUpperTabPlayerMovieRecord(),
                 UpperTabListFixedIndex => GetSelectedUpperTabListMovieRecord(),
                 UpperTabBig10FixedIndex => GetSelectedUpperTabBig10MovieRecord(),
                 _ => null,
@@ -141,6 +142,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => [.. GetSelectedUpperTabSmallMovieRecords()],
                 UpperTabBigFixedIndex => [.. GetSelectedUpperTabBigMovieRecords()],
                 UpperTabGridFixedIndex => [.. GetSelectedUpperTabGridMovieRecords()],
+                PlayerTabIndex => [.. GetSelectedUpperTabPlayerMovieRecords()],
                 UpperTabListFixedIndex => [.. GetSelectedUpperTabListMovieRecords()],
                 UpperTabBig10FixedIndex => [.. GetSelectedUpperTabBig10MovieRecords()],
                 _ => null,
@@ -190,6 +192,9 @@ namespace IndigoMovieManager
                     break;
                 case UpperTabGridFixedIndex:
                     SelectUpperTabGridMovieRecord(record);
+                    break;
+                case PlayerTabIndex:
+                    SelectUpperTabPlayerMovieRecord(record);
                     break;
                 case UpperTabListFixedIndex:
                     SelectUpperTabListMovieRecord(record);
@@ -241,6 +246,9 @@ namespace IndigoMovieManager
                 case UpperTabGridFixedIndex:
                     SelectUpperTabGridAsDefaultView();
                     break;
+                case PlayerTabIndex:
+                    SelectUpperTabPlayerAsDefaultView();
+                    break;
                 case UpperTabListFixedIndex:
                     SelectUpperTabListAsDefaultView();
                     break;
@@ -256,12 +264,22 @@ namespace IndigoMovieManager
         // タブ切替時に Queue/visible-range 側へ通知する有効タブIDを 1 か所で決める。
         private int ResolveEffectiveUpperTabQueueTabIndex(int tabIndex)
         {
-            return tabIndex == DuplicateVideoTabIndex ? UpperTabGridFixedIndex : tabIndex;
+            return tabIndex switch
+            {
+                DuplicateVideoTabIndex => UpperTabGridFixedIndex,
+                PlayerTabIndex => UpperTabGridFixedIndex,
+                _ => tabIndex,
+            };
         }
 
         // タブ切替の前処理を 1 か所へ寄せ、切替本体は分岐だけに集中させる。
         private void PrepareUpperTabSelectionChange(int tabIndex)
         {
+            if (tabIndex != PlayerTabIndex)
+            {
+                PausePlayerTabPlaybackForBackground();
+            }
+
             int effectiveQueueTabIndex = ResolveEffectiveUpperTabQueueTabIndex(tabIndex);
             MainVM.DbInfo.CurrentTabIndex = effectiveQueueTabIndex;
             TryDeletePendingUpperTabJobsForUnselectedTabs(effectiveQueueTabIndex);
@@ -326,6 +344,15 @@ namespace IndigoMovieManager
             if (selectionChangeContext.TabIndex == DuplicateVideoTabIndex)
             {
                 HandleUpperTabDuplicateVideosSelectionChanged(
+                    selectionChangeContext.SelectionStopwatch,
+                    selectionChangeContext.TabIndex
+                );
+                return;
+            }
+
+            if (selectionChangeContext.TabIndex == PlayerTabIndex)
+            {
+                HandleUpperTabPlayerSelectionChanged(
                     selectionChangeContext.SelectionStopwatch,
                     selectionChangeContext.TabIndex
                 );

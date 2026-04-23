@@ -45,7 +45,7 @@ namespace IndigoMovieManager
         /// <summary>
         /// 画像やカスタム枠がカチッとクリックされた時！クリックされた場所を覚えつつ、そのデータをリストの「現在の選択」とシンクロさせる絆の処理！🤝
         /// </summary>
-        private void Label_MouseDown(object sender, MouseButtonEventArgs e)
+        private async void Label_MouseDown(object sender, MouseButtonEventArgs e)
         {
             if (sender is Label label && label.DataContext is MovieRecords record)
             {
@@ -53,6 +53,20 @@ namespace IndigoMovieManager
                 SelectCurrentUpperTabMovieRecord(record);
                 // 後続のドラッグ＆ドロップ判定などに使うため、クリックした座標を保存
                 lbClickPoint = e.GetPosition(label);
+
+                if (
+                    e.ChangedButton == MouseButton.Left
+                    && TabPlayer?.IsSelected == true
+                )
+                {
+                    await OpenMovieInPlayerTabAsync(
+                        record,
+                        0,
+                        playImmediately: true,
+                        mute: false,
+                        focusTimeSlider: false
+                    );
+                }
             }
         }
 

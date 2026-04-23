@@ -155,6 +155,7 @@ namespace IndigoMovieManager
                 return [];
             }
 
+            int resolvedTabIndex = ResolvePlayerTabGridProxyTabIndex(tabIndex);
             string[] thumbProps =
             [
                 nameof(MovieRecords.ThumbPathSmall),
@@ -163,12 +164,12 @@ namespace IndigoMovieManager
                 nameof(MovieRecords.ThumbPathList),
                 nameof(MovieRecords.ThumbPathBig10),
             ];
-            if (tabIndex < 0 || tabIndex >= thumbProps.Length)
+            if (resolvedTabIndex < 0 || resolvedTabIndex >= thumbProps.Length)
             {
                 return [];
             }
 
-            var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[tabIndex]);
+            var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[resolvedTabIndex]);
             if (thumbProp == null)
             {
                 return [];

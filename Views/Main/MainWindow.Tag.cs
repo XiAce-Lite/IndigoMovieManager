@@ -563,6 +563,11 @@ namespace IndigoMovieManager
                 return GridList;
             }
 
+            if (TabPlayer?.IsSelected == true)
+            {
+                return PlayerThumbnailList;
+            }
+
             if (TabList?.IsSelected == true)
             {
                 return ListDataGrid;

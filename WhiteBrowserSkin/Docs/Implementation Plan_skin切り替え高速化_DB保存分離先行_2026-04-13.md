@@ -1,6 +1,6 @@
 # Implementation Plan: skin切り替え高速化 DB保存分離先行 2026-04-13
 
-最終更新日: 2026-04-22
+最終更新日: 2026-04-23
 
 変更概要:
 - 全体プラン見直しを受けて、`skin` 切り替え高速化の中で DB を「先頭の決定打」ではなく「第2群の土台施策」として位置づけ直した
@@ -24,6 +24,9 @@
 - skin 本線の終盤計画として、`TagInputRelation / umiFindTreeEve` の MainWindow 実 host と runtime bridge 実 host の terminal 再描画・`changeSkin` 境界・dirty state 残差を、完了条件ベースで詰める順序を追記した
 - `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は、MainWindow 実 host 側も focused 2 件通過で固定し、両実 host の固定済み領域へ昇格した
 - `TagInputRelation` の bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は、MainWindow 実 host 側も focused 4 件通過で固定し、両実 host の固定済み領域へ昇格した
+- runtime bridge の compat dispatch は、`__immWbCompat` が壊れても `__immWbCompatBridge` へ確実に落とす alias fallback を固定した（`da6a22b`）
+- lifecycle 系 focused テストは、`getSelectThums` の pending 応答を補って待機取りこぼしを減らした（`0a9fd64`）
+- ただし上記 2 件は防御強化であり、`runtime bridge` の serial timeout と `MainWindow` 側 fail-fast 未固定の判定は変更しない
 
 ## 1. 結論
 
@@ -575,6 +578,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ### 13.3 runtime bridge 側が未固定
 
+- 2026-04-23 追記: `da6a22b` と `0a9fd64` で compat alias fallback と lifecycle pending 応答を補強したが、これは pending 解決の取りこぼし防止である。`MissingSkin -> success` 直列 timeout の未固定判定は維持する。
 - `TagInputRelation` の runtime bridge 直列は、2026-04-23 時点で次の切り分けを正本とする
   - bare terminal: `failure` 単体 / `success` 単体は green、`MissingSkin -> #umlFindTreeEve` は timeout
   - `Get後`: `terminal -> success` と `terminal -> failure` は green、`terminal -> MissingSkin -> success` は未固定

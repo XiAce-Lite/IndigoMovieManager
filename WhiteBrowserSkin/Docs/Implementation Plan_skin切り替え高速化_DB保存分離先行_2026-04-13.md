@@ -545,11 +545,12 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ただし「説明できる」は、すべてを対称に green 化する意味ではない。実測で非対称なら、その非対称を docs と test で正本化し、危険な直列遷移は未固定として分離できていることも完了条件に含める。
 
-## 13. 2026-04-22 時点の固定状況インデックス
+## 13. 2026-04-23 時点の固定状況インデックス
 
 ### 13.1 両実 host で固定済み
 
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+- build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、`runtime bridge` 実 host では `onClearAll/onSkinLeave -> 再入` による terminal rerender も正本化済み
 - `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal failure (`onClearAll/onSkinLeave -> MissingSkin`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み

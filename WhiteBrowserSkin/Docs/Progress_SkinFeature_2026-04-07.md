@@ -14,6 +14,7 @@
   - 未固定: どちらか片側だけ green、または直列遷移で timeout / fail-fast が混ざる。
 - 2026-04-23 時点の読み順:
   - 両実 host で固定済み: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` と `changeSkin success / failure` の主要境界。
+    - `runtime bridge` 側は、`tag / thumb` の terminal rerender まで固定済み。
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
   - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（`TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-23 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
 - 詳細の正本:
@@ -609,6 +610,7 @@
 - 2026-04-20: build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)` は、`failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout した。ここは未固定の直列境界として切り分け済み。
 - 2026-04-22: build 出力 skin 4 本の runtime bridge 実 host における `tag差分更新後 -> onSkinLeave -> wb.changeSkin("MissingSkin") -> wb.changeSkin(nextSkin)` は、`Search_table -> DefaultSmallWB` の代表 1 ケースへ絞っても、次 skin の tag baseline 復帰待ちが timeout した。`tag` 側の failure -> success 直列も bundle 依存ではなく、runtime bridge そのものの未固定境界として扱う。
 - 2026-04-23: `Search_table + onClearAll -> MissingSkin -> DefaultSmallWB` を代表 1 ケースへ絞っても、`tag` 側は 2 回目 `changeSkin` 以前の `MissingSkin` 結果待ちから timeout、`thumb` 側も `terminal MissingSkin` 結果待ちから timeout した。build 出力 skin 4 本の runtime bridge 直列 timeout は `leave` だけでなく `clear` でも再現すると判断する。
+- 2026-04-19: runtime bridge 実 host では build 出力 skin 4 本の `onUpdateThum / onModifyTags` に対して、`onClearAll` または `onSkinLeave` を挟んで同一 skin へ再入しても、更新済み状態を持ち越さず初期 `thumb / tag` 表示へ戻ることを focused 16 件通過で確認した。build 出力 skin の terminal rerender は bridge 正本で揃っている。
 - 2026-04-22: 以後の残差整理を迷わないよう、固定状況の読み順を `両実 host で固定済み / MainWindow 側が未固定 / runtime bridge 側が未固定` の 3 区分へ再整理した。build 出力 skin 4 本の `tag / thumb` は `changeSkin` 系まで両実 host でかなり揃い、未固定の主戦場は `MainWindow fail-fast` と `runtime bridge の直列 timeout` に絞られている。
 - 2026-04-22: MainWindow 実 host で既存メソッドだけ存在して未実行だった `Search_table` の `onSkinEnter` profile 復元受け入れと、`DefaultSmallWB` の `addWhere` 再更新受け入れに `[Test]` を付け、focused 2 件通過で green を確認した。既存 docs 上の「確認済み」を実際の自動回帰へ昇格できた。
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onRegistedFile -> Refresh()` 後に `onClearAll -> Refresh()` しても `fresh-series` の tag tree と `ClearCache` footer を 1 回だけ再生成し、重複表示しないことを focused 6 件通過で確認した。

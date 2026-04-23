@@ -547,6 +547,10 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ## 13. 2026-04-23 時点の固定状況インデックス
 
+補足:
+- この章はシナリオ名で整理している。実テスト名は日本語長名のため、1対1で完全一致しない場合がある。
+- `未固定` は「該当シナリオのテストメソッドが無い」意味ではなく、「テストはあっても focused 実行で fail-fast / timeout が混ざり、固定済みへ昇格していない」意味で扱う。
+
 ### 13.1 両実 host で固定済み
 
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み

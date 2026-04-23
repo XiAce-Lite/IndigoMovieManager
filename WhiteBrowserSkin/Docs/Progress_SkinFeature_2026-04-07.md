@@ -18,7 +18,7 @@
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
   - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（`TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-23 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
 - 詳細の正本:
-  - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-22 時点の固定状況インデックス」を正本として扱う。
+  - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-23 時点の固定状況インデックス」を正本として扱う。
   - 本メモでは、上記インデックスの裏取りログを `更新メモ` で追える状態を維持する。
 
 ## 今回の実装反映 (2026-04-10 / 2026-04-11)

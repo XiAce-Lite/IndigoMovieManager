@@ -35781,7 +35781,13 @@ VALUES (
             window.ExternalSkinFallbackOpenRuntimeDownloadActionForTesting = null;
             window.ExternalSkinRefreshCompletedForTesting = null;
             window.ExternalSkinHostPresentationAppliedForTesting = null;
+
+            // Close 前に host teardown を先行させ、WebView2 の破棄競合を減らす。
+            _ = InvokePrivateMethod(window, "DisposeExternalSkinHostIntegration");
+            await WaitForDispatcherIdleAsync();
+
             window.Close();
+            await WaitForDispatcherIdleAsync();
             await WaitForDispatcherIdleAsync();
         }
     }

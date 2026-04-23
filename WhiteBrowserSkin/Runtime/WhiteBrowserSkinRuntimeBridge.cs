@@ -99,22 +99,22 @@ namespace IndigoMovieManager.Skin.Runtime
 
         public Task ResolveRequestAsync(string messageId, object payload)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.resolve", messageId, payload);
+            return ExecuteCompatDispatchAsync("resolve", messageId, payload);
         }
 
         public Task RejectRequestAsync(string messageId, string errorMessage)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.reject", messageId, errorMessage ?? "");
+            return ExecuteCompatDispatchAsync("reject", messageId, errorMessage ?? "");
         }
 
         public Task DispatchCallbackAsync(string callbackName, object payload)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.dispatchCallback", callbackName, payload);
+            return ExecuteCompatDispatchAsync("dispatchCallback", callbackName, payload);
         }
 
         public Task HandleSkinLeaveAsync()
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.handleSkinLeave");
+            return ExecuteCompatDispatchAsync("handleSkinLeave");
         }
 
         public void RegisterExternalThumbnailPath(string thumbPath)
@@ -248,14 +248,20 @@ namespace IndigoMovieManager.Skin.Runtime
             e.Response = CreateThumbnailResponse(thumbPath);
         }
 
-        private Task ExecuteCompatDispatchAsync(string functionPath, params object[] arguments)
+        private Task ExecuteCompatDispatchAsync(string functionName, params object[] arguments)
         {
+            if (string.IsNullOrWhiteSpace(functionName))
+            {
+                return Task.CompletedTask;
+            }
+
             string serializedArguments = string.Join(
                 ", ",
                 arguments.Select(argument => JsonSerializer.Serialize(argument))
             );
+            // __immWbCompat が一時的に差し替わっても bridge alias 側で受けられるようにする。
             string script =
-                $"if (window.{functionPath}) window.{functionPath}({serializedArguments});";
+                $"(() => {{ const bridge = window.__immWbCompat || window.__immWbCompatBridge; if (bridge && typeof bridge[{JsonSerializer.Serialize(functionName)}] === 'function') {{ bridge[{JsonSerializer.Serialize(functionName)}]({serializedArguments}); }} }})();";
             return ExecuteScriptAsync(script);
         }
 

@@ -2146,7 +2146,8 @@
     invokeOnSkinEnter();
   }
 
-  global.__immWbCompat = {
+  // skin 側で __immWbCompat が一時的に上書きされても、bridge alias で応答経路を維持する。
+  var compatBridge = {
     resolve: function (id, payload) {
       var item = pending.get(id);
       if (!item) {
@@ -2179,6 +2180,8 @@
       return handleSkinLeave();
     }
   };
+  global.__immWbCompat = compatBridge;
+  global.__immWbCompatBridge = compatBridge;
 
   global.wb = global.wb || {};
   global.wb.defaultThumbLimit = defaultThumbLimit;

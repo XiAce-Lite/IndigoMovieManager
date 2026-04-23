@@ -26,6 +26,7 @@ namespace IndigoMovieManager
         private int _externalSkinHostRefreshTraceSequence;
         private string _externalSkinHostRefreshBatchTraceId = "";
         private string _externalSkinHostRefreshDeferredRequestTraceId = "";
+        private int _externalSkinHostTeardownStarted;
         // 実 UI テストでは host 準備成否だけ差し替え、表示切替そのものは本物の MainWindow で確認する。
         internal Func<WhiteBrowserSkinDefinition, string, Task<bool>> ExternalSkinHostPrepareAsyncForTesting
         {
@@ -110,6 +111,11 @@ namespace IndigoMovieManager
         // 同一フレーム内の更新を 1 回へ畳み、DB 切替や skin 切替の揺れを吸収する。
         private void QueueExternalSkinHostRefresh(string reason, string requestTraceId = null)
         {
+            if (IsExternalSkinHostTeardownStarted())
+            {
+                return;
+            }
+
             string normalizedReason = reason ?? "";
             string normalizedRequestTraceId =
                 string.IsNullOrWhiteSpace(requestTraceId)
@@ -276,6 +282,11 @@ namespace IndigoMovieManager
             string requestTraceId
         )
         {
+            if (IsExternalSkinHostTeardownStarted())
+            {
+                return;
+            }
+
             using IDisposable refreshTraceScope = DebugRuntimeLog.BeginScopeForCurrentAsyncFlow(
                 $"trace={requestTraceId}"
             );
@@ -449,6 +460,11 @@ namespace IndigoMovieManager
 
         private WhiteBrowserSkinHostControl EnsureExternalSkinHostCreated()
         {
+            if (IsExternalSkinHostTeardownStarted())
+            {
+                return null;
+            }
+
             if (_externalSkinHostControl != null)
             {
                 return _externalSkinHostControl;
@@ -739,6 +755,15 @@ namespace IndigoMovieManager
             string stage
         )
         {
+            if (IsExternalSkinHostTeardownStarted())
+            {
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"refresh skipped teardown: request={requestTraceId} generation={generation} stage={stage} reason={reason}"
+                );
+                return true;
+            }
+
             if (
                 _externalSkinHostRefreshScheduler == null
                 || generation == _externalSkinHostRefreshScheduler.CurrentGeneration
@@ -849,6 +874,8 @@ namespace IndigoMovieManager
 
         private void DisposeExternalSkinHostIntegration()
         {
+            Interlocked.Exchange(ref _externalSkinHostTeardownStarted, 1);
+
             if (MainVM?.DbInfo != null)
             {
                 MainVM.DbInfo.PropertyChanged -= MainDbInfo_PropertyChangedForExternalSkin;
@@ -883,6 +910,12 @@ namespace IndigoMovieManager
             _externalSkinHostRefreshScheduler = null;
             _lastExternalSkinHostOperationResult = null;
             _lastExternalSkinHostFailureReason = "";
+        }
+
+        // teardown 開始後は refresh の新規投入と実行を止め、WebView2 破棄との競合を避ける。
+        private bool IsExternalSkinHostTeardownStarted()
+        {
+            return Volatile.Read(ref _externalSkinHostTeardownStarted) != 0;
         }
 
         private sealed class ExternalSkinHostRefreshBatchScope : IDisposable

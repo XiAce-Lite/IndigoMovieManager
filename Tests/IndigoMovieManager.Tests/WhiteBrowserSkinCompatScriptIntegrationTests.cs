@@ -816,7 +816,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             }
 
             Assert.That(result.FocusedClassName, Is.EqualTo("DefaultSmallWB"));
-            Assert.That(result.ClearedClassName, Is.EqualTo("true"));
+            Assert.That(result.ClearedClassName, Is.EqualTo("true|true"));
         }
         finally
         {
@@ -2844,22 +2844,33 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 (() => {
                   window.__wbChangeSkinNameDone = false;
                   window.__wbChangeSkinNameError = "";
-                  window.__wbChangeSkinNameResult = { changed: "", skinName: "" };
+                  window.__wbChangeSkinNameResult = { changed: "", skinName: "", aliasExists: "" };
 
                   (async () => {
+                    window.__immMessages = [];
                     const changeTask = wb.changeSkin("DefaultSmallWB");
                     const changeRequest = window.__immMessages.shift();
                     if (!changeRequest) {
                       throw new Error("changeSkin request was not captured.");
                     }
 
-                    window.__immWbCompat.resolve(changeRequest.id, true);
+                    // C# 側の応答入口は alias を優先するため、compat 側の同等契約をここで固定する。
+                    const aliasExists = !!(window.__immWbCompatBridge && typeof window.__immWbCompatBridge.resolve === "function");
+                    window.__immWbCompatBridge.resolve(changeRequest.id, true);
                     const changed = await changeTask;
-                    const skinName = await wb.getSkinName();
+                    const skinNameTask = wb.getSkinName();
+                    const skinNameRequest = window.__immMessages.shift();
+                    if (!skinNameRequest) {
+                      throw new Error("getSkinName request was not captured.");
+                    }
+
+                    window.__immWbCompatBridge.resolve(skinNameRequest.id, "DefaultSmallWB");
+                    const skinName = await skinNameTask;
 
                     window.__wbChangeSkinNameResult = {
                       changed: String(!!changed),
-                      skinName: String(skinName || "")
+                      skinName: String(skinName || ""),
+                      aliasExists: String(aliasExists)
                     };
                     window.__wbChangeSkinNameDone = true;
                   })().catch(function (error) {
@@ -2890,7 +2901,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
 
             return DefaultFocusFallbackVerificationResult.Succeeded(
                 result.GetProperty("skinName").GetString() ?? "",
-                result.GetProperty("changed").GetString() ?? ""
+                $"{result.GetProperty("changed").GetString() ?? ""}|{result.GetProperty("aliasExists").GetString() ?? ""}"
             );
         }
         finally

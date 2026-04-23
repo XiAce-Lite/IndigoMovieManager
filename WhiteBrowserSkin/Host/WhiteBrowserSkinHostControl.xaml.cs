@@ -53,6 +53,14 @@ namespace IndigoMovieManager.Skin.Host
             string thumbRootPath
         )
         {
+            if (disposed)
+            {
+                return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                    requestedSkinName ?? "",
+                    "External skin host is already disposed."
+                );
+            }
+
             WhiteBrowserSkinHostOperationResult attachResult = await runtimeBridge.TryEnsureAttachedAsync(
                 SkinWebView,
                 requestedSkinName,
@@ -82,6 +90,11 @@ namespace IndigoMovieManager.Skin.Host
 
         public async Task ClearAsync()
         {
+            if (disposed)
+            {
+                return;
+            }
+
             runtimeBridge.ClearRegisteredExternalThumbnailPaths();
             // 終了経路では未初期化の host も来るので、その時は空 HTML への遷移を無理に撃たない。
             if (SkinWebView.CoreWebView2 == null)
@@ -163,6 +176,11 @@ namespace IndigoMovieManager.Skin.Host
 
         private async Task NavigateToStringAsync(string html)
         {
+            if (disposed)
+            {
+                throw new InvalidOperationException("External skin host is already disposed.");
+            }
+
             TaskCompletionSource<bool> navigationCompleted = new(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );

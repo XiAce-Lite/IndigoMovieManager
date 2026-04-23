@@ -60,6 +60,7 @@ namespace IndigoMovieManager
             _everythingPollWatchFolderSnapshot = [];
             _everythingPollEligibleWatchFolderSnapshotDbPath = "";
             _everythingPollEligibleWatchFolderSnapshot = [];
+            ResetEverythingWatchPollAdaptiveDelayState();
         }
 
         // watch テーブルから、Everything poll 判定に必要なフォルダだけを順序維持で抜き出す。

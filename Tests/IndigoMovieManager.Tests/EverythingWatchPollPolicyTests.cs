@@ -44,6 +44,7 @@ public sealed class EverythingWatchPollPolicyTests
         MainWindow window = CreateWindow();
         SetStartupFeedPartialActive(window, isActive: false);
         SetPrivateField(window, "_consecutiveCalmEverythingPollCount", 3);
+        SetPrivateField(window, "_everythingWatchPollLoopStartedTick64", Environment.TickCount64 - 15000);
 
         int delayMs = (int)InvokePrivateInstance(
             window,
@@ -52,6 +53,23 @@ public sealed class EverythingWatchPollPolicyTests
         );
 
         Assert.That(delayMs, Is.EqualTo(9000));
+    }
+
+    [Test]
+    public void ResolveEverythingWatchPollDelayFromState_起動直後は静かでも基本間隔を返す()
+    {
+        MainWindow window = CreateWindow();
+        SetStartupFeedPartialActive(window, isActive: false);
+        SetPrivateField(window, "_consecutiveCalmEverythingPollCount", 3);
+        SetPrivateField(window, "_everythingWatchPollLoopStartedTick64", Environment.TickCount64);
+
+        int delayMs = (int)InvokePrivateInstance(
+            window,
+            "ResolveEverythingWatchPollDelayFromState",
+            0
+        );
+
+        Assert.That(delayMs, Is.EqualTo(3000));
     }
 
     [Test]
@@ -91,6 +109,26 @@ public sealed class EverythingWatchPollPolicyTests
 
         Assert.That(GetPrivateField<int>(window, "_lastEverythingPollUpdateCount"), Is.EqualTo(3));
         Assert.That(GetPrivateField<int>(window, "_consecutiveCalmEverythingPollCount"), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ResetEverythingWatchPollAdaptiveDelayState_DB切替時にcalm状態を初期化する()
+    {
+        MainWindow window = CreateWindow();
+        SetPrivateField(window, "_lastEverythingPollUpdateCount", 1);
+        SetPrivateField(window, "_consecutiveCalmEverythingPollCount", 5);
+        SetPrivateField(window, "_lastEverythingPollDelayMs", 9000);
+        SetPrivateField(window, "_everythingWatchPollLoopStartedTick64", Environment.TickCount64 - 15000);
+
+        InvokePrivateInstance(window, "ResetEverythingWatchPollAdaptiveDelayState");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetPrivateField<int>(window, "_lastEverythingPollUpdateCount"), Is.EqualTo(0));
+            Assert.That(GetPrivateField<int>(window, "_consecutiveCalmEverythingPollCount"), Is.EqualTo(0));
+            Assert.That(GetPrivateField<int>(window, "_lastEverythingPollDelayMs"), Is.EqualTo(3000));
+            Assert.That(GetPrivateField<long>(window, "_everythingWatchPollLoopStartedTick64"), Is.GreaterThan(0));
+        });
     }
 
     [Test]

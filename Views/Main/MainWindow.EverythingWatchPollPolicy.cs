@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -6,6 +7,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private const int EverythingWatchPollCalmStartupGraceMs = 15000;
+        private long _everythingWatchPollLoopStartedTick64;
+
         // Everything poll を走らせるかどうかの pure 判定を、UI本体から切り離してまとめる。
         internal static bool ShouldRunEverythingWatchPollPolicy(
             bool isStartupFeedPartialActive,
@@ -78,6 +82,7 @@ namespace IndigoMovieManager
             if (
                 delayMs == EverythingWatchPollIntervalMs
                 && !IsStartupFeedPartialActive
+                && HasEverythingWatchPollCalmDelayWarmupElapsed()
                 && Volatile.Read(ref _consecutiveCalmEverythingPollCount)
                     >= EverythingWatchPollCalmCyclesThreshold
             )
@@ -106,6 +111,36 @@ namespace IndigoMovieManager
             }
 
             Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
+        }
+
+        // DB切替や監視設定変更後は、別スコープの静穏判定を持ち越さない。
+        private void ResetEverythingWatchPollAdaptiveDelayState()
+        {
+            Volatile.Write(ref _lastEverythingPollUpdateCount, 0);
+            Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
+            Volatile.Write(ref _lastEverythingPollDelayMs, EverythingWatchPollIntervalMs);
+            Volatile.Write(ref _everythingWatchPollLoopStartedTick64, Environment.TickCount64);
+        }
+
+        // poll 起動直後は初期処理とぶつかりやすいため、calm 延長は一定時間後だけ許可する。
+        private bool HasEverythingWatchPollCalmDelayWarmupElapsed()
+        {
+            long startedTick = Volatile.Read(ref _everythingWatchPollLoopStartedTick64);
+            if (startedTick <= 0)
+            {
+                // 初回判定時に開始時刻を掴み、初期処理と競合しやすい時間帯は calm 延長を見送る。
+                startedTick = Environment.TickCount64;
+                Volatile.Write(ref _everythingWatchPollLoopStartedTick64, startedTick);
+                return false;
+            }
+
+            long elapsedMs = Environment.TickCount64 - startedTick;
+            if (elapsedMs < 0)
+            {
+                return false;
+            }
+
+            return elapsedMs >= EverythingWatchPollCalmStartupGraceMs;
         }
     }
 }

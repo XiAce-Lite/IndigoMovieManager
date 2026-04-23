@@ -1187,7 +1187,8 @@ namespace IndigoMovieManager
         {
             // 起動直後の初回描画を優先するため、同期前半をUIスレッドへ残さない。
             await Task.Yield();
-
+            // poll loop の再起動時も、静穏判定は新しい起点から測り直す。
+            ResetEverythingWatchPollAdaptiveDelayState();
             while (!cts.IsCancellationRequested)
             {
                 try
@@ -2096,54 +2097,33 @@ namespace IndigoMovieManager
 
             FilteredMovieRecsUpdateResult applyResult = default;
             bool applied = false;
-
-            await Dispatcher.InvokeAsync(() =>
+            if (Dispatcher == null || Dispatcher.CheckAccess())
             {
-                if (requestRevision != _filterAndSortRequestRevision)
-                {
-                    return;
-                }
-
-                int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
-                    ? resolvedTabIndex
-                    : UpperTabGridFixedIndex;
-                FilteredMovieRecsUpdateMode updateMode =
-                    UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                        currentTabIndex,
-                        isSortOnly: false
-                    );
-                MainVM.DbInfo.SearchCount = searchCount;
-                filterList = sorted;
-                applyResult = MainVM.ReplaceFilteredMovieRecs(
+                // 既にUIスレッドなら再ディスパッチせず、その場で適用して待機時間を増やさない。
+                applied = TryApplyMemoryRefreshResultOnUiThread(
+                    requestRevision,
                     sorted,
-                    updateMode: updateMode
+                    searchCount,
+                    resolvedSortId,
+                    out applyResult
                 );
-                UpdateExtensionDetailVisibilityBySearchCount();
-
-                bool shouldRefresh =
-                    applyResult.HasChanges
-                    && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
-                        currentTabIndex,
-                        updateMode
-                    );
-                if (shouldRefresh)
-                {
-                    Refresh();
-                }
-
-                if (applyResult.HasChanges)
-                {
-                    NotifyUpperTabViewportSourceChanged();
-                    RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rename");
-                }
-
-                if (string.Equals(resolvedSortId, "28", StringComparison.Ordinal))
-                {
-                    RefreshThumbnailErrorRecords(force: true);
-                }
-
-                applied = true;
-            });
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        applied = TryApplyMemoryRefreshResultOnUiThread(
+                            requestRevision,
+                            sorted,
+                            searchCount,
+                            resolvedSortId,
+                            out applyResult
+                        );
+                    },
+                    DispatcherPriority.Background
+                );
+            }
 
             if (!applied)
             {
@@ -2160,6 +2140,60 @@ namespace IndigoMovieManager
                 "ui-tempo",
                 $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
+        }
+
+        // query-only更新結果のUI反映を1か所へ寄せ、Dispatcher呼び出し側を薄く保つ。
+        private bool TryApplyMemoryRefreshResultOnUiThread(
+            int requestRevision,
+            IReadOnlyList<MovieRecords> sortedMovies,
+            int searchCount,
+            string resolvedSortId,
+            out FilteredMovieRecsUpdateResult applyResult
+        )
+        {
+            applyResult = default;
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                return false;
+            }
+
+            int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                ? resolvedTabIndex
+                : UpperTabGridFixedIndex;
+            FilteredMovieRecsUpdateMode updateMode =
+                UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                    currentTabIndex,
+                    isSortOnly: false
+                );
+
+            MainVM.DbInfo.SearchCount = searchCount;
+            filterList = sortedMovies;
+            applyResult = MainVM.ReplaceFilteredMovieRecs(sortedMovies, updateMode: updateMode);
+            UpdateExtensionDetailVisibilityBySearchCount();
+
+            bool shouldRefresh =
+                applyResult.HasChanges
+                && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                    currentTabIndex,
+                    updateMode
+                );
+            if (shouldRefresh)
+            {
+                Refresh();
+            }
+
+            if (applyResult.HasChanges)
+            {
+                NotifyUpperTabViewportSourceChanged();
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rename");
+            }
+
+            if (string.Equals(resolvedSortId, "28", StringComparison.Ordinal))
+            {
+                RefreshThumbnailErrorRecords(force: true);
+            }
+
+            return true;
         }
 
         // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。

@@ -27,6 +27,15 @@ namespace IndigoMovieManager
         private bool _pendingWebViewMute;
         private bool _isWebViewPlayerActive;
         private bool _isWebViewPlayerBridgeRegistered;
+        private bool _isPlayerWebViewFullscreen;
+        private WindowState _playerWebViewRestoreWindowState;
+        private WindowStyle _playerWebViewRestoreWindowStyle;
+        private ResizeMode _playerWebViewRestoreResizeMode;
+        private bool _playerWebViewRestoreTopmost;
+        private Thickness _playerFullscreenRestoreRootMargin;
+        private Thickness _playerFullscreenRestoreSurfacePadding;
+        private Thickness _playerFullscreenRestoreSurfaceBorderThickness;
+        private CornerRadius _playerFullscreenRestoreSurfaceCornerRadius;
         private string _currentPlayerMoviePath = "";
         private string _currentWebViewPlayerPath = "";
 
@@ -389,7 +398,7 @@ namespace IndigoMovieManager
                 : Visibility.Visible;
             if (PlayerWebViewActionBar != null)
             {
-                PlayerWebViewActionBar.Visibility = _isWebViewPlayerActive
+                PlayerWebViewActionBar.Visibility = _isWebViewPlayerActive && !_isPlayerWebViewFullscreen
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
@@ -491,6 +500,28 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (_isPlayerWebViewFullscreen)
+            {
+                Grid.SetRow(PlayerSurfaceHost, 0);
+                Grid.SetColumn(PlayerSurfaceHost, 0);
+                Grid.SetRowSpan(PlayerSurfaceHost, 3);
+                Grid.SetColumnSpan(PlayerSurfaceHost, 3);
+                Grid.SetRow(PlayerThumbnailHost, 0);
+                Grid.SetColumn(PlayerThumbnailHost, 2);
+                Grid.SetRowSpan(PlayerThumbnailHost, 1);
+                Grid.SetColumnSpan(PlayerThumbnailHost, 1);
+
+                PlayerThumbnailHost.Visibility = Visibility.Collapsed;
+                PlayerTabMainColumn.Width = new GridLength(1d, GridUnitType.Star);
+                PlayerTabGapColumn.Width = new GridLength(0d);
+                PlayerTabSideColumn.Width = new GridLength(0d);
+                PlayerTabTopRow.Height = new GridLength(1d, GridUnitType.Star);
+                PlayerTabGapRow.Height = new GridLength(0d);
+                PlayerTabBottomRow.Height = new GridLength(0d);
+                return;
+            }
+
+            PlayerThumbnailHost.Visibility = Visibility.Visible;
             bool useBottomLayout =
                 PlayerTabLayoutRoot.ActualWidth > 0d
                 && PlayerTabLayoutRoot.ActualWidth < PlayerTabBottomLayoutWidthThreshold;
@@ -650,6 +681,25 @@ namespace IndigoMovieManager
             SyncPlayerVolumeFromWebView(volume);
         }
 
+        private void UxWebVideoPlayer_ContainsFullScreenElementChanged(
+            object sender,
+            object e
+        )
+        {
+            if (uxWebVideoPlayer?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            if (uxWebVideoPlayer.CoreWebView2.ContainsFullScreenElement)
+            {
+                EnterPlayerWebViewFullscreen();
+                return;
+            }
+
+            ExitPlayerWebViewFullscreen();
+        }
+
         private static bool ShouldUseWebViewPlayerForPlayerTab(bool focusTimeSlider)
         {
             return !focusTimeSlider;
@@ -695,6 +745,8 @@ namespace IndigoMovieManager
             }
 
             uxWebVideoPlayer.CoreWebView2.WebMessageReceived += UxWebVideoPlayer_WebMessageReceived;
+            uxWebVideoPlayer.CoreWebView2.ContainsFullScreenElementChanged +=
+                UxWebVideoPlayer_ContainsFullScreenElementChanged;
             await uxWebVideoPlayer.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
                 """
                 (() => {
@@ -749,6 +801,77 @@ namespace IndigoMovieManager
             _isWebViewPlayerBridgeRegistered = true;
         }
 
+        // DOM 側の full screen 要求に合わせて、WPF ウィンドウ自体も全画面へ切り替える。
+        private void EnterPlayerWebViewFullscreen()
+        {
+            if (_isPlayerWebViewFullscreen)
+            {
+                return;
+            }
+
+            _playerWebViewRestoreWindowState = WindowState;
+            _playerWebViewRestoreWindowStyle = WindowStyle;
+            _playerWebViewRestoreResizeMode = ResizeMode;
+            _playerWebViewRestoreTopmost = Topmost;
+            _playerFullscreenRestoreRootMargin = PlayerTabLayoutRoot?.Margin ?? new Thickness(8d, 8d, 8d, 12d);
+            _playerFullscreenRestoreSurfacePadding = PlayerSurfaceHost?.Padding ?? new Thickness(8d);
+            _playerFullscreenRestoreSurfaceBorderThickness = PlayerSurfaceHost?.BorderThickness ?? new Thickness(1d);
+            _playerFullscreenRestoreSurfaceCornerRadius = PlayerSurfaceHost?.CornerRadius ?? new CornerRadius(6d);
+
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            Topmost = true;
+            WindowState = WindowState.Maximized;
+            _isPlayerWebViewFullscreen = true;
+
+            if (PlayerTabLayoutRoot != null)
+            {
+                PlayerTabLayoutRoot.Margin = new Thickness(0d);
+            }
+
+            if (PlayerSurfaceHost != null)
+            {
+                PlayerSurfaceHost.Padding = new Thickness(0d);
+                PlayerSurfaceHost.BorderThickness = new Thickness(0d);
+                PlayerSurfaceHost.CornerRadius = new CornerRadius(0d);
+            }
+
+            UpdatePlayerTabLayoutMode();
+            UpdateManualPlayerViewport();
+            ShowPlayerSurface();
+        }
+
+        // 動画側が full screen を抜けたら、元のウィンドウ状態へ素直に戻す。
+        private void ExitPlayerWebViewFullscreen()
+        {
+            if (!_isPlayerWebViewFullscreen)
+            {
+                return;
+            }
+
+            Topmost = _playerWebViewRestoreTopmost;
+            WindowStyle = _playerWebViewRestoreWindowStyle;
+            ResizeMode = _playerWebViewRestoreResizeMode;
+            WindowState = _playerWebViewRestoreWindowState;
+            _isPlayerWebViewFullscreen = false;
+
+            if (PlayerTabLayoutRoot != null)
+            {
+                PlayerTabLayoutRoot.Margin = _playerFullscreenRestoreRootMargin;
+            }
+
+            if (PlayerSurfaceHost != null)
+            {
+                PlayerSurfaceHost.Padding = _playerFullscreenRestoreSurfacePadding;
+                PlayerSurfaceHost.BorderThickness = _playerFullscreenRestoreSurfaceBorderThickness;
+                PlayerSurfaceHost.CornerRadius = _playerFullscreenRestoreSurfaceCornerRadius;
+            }
+
+            UpdatePlayerTabLayoutMode();
+            UpdateManualPlayerViewport();
+            ShowPlayerSurface();
+        }
+
         private async Task PauseWebViewPlayerAsync()
         {
             if (!_isWebViewPlayerActive || uxWebVideoPlayer?.CoreWebView2 == null)
@@ -774,6 +897,7 @@ namespace IndigoMovieManager
             _hasPendingWebViewPlaybackRequest = false;
             _isWebViewPlayerActive = false;
             _currentWebViewPlayerPath = "";
+            ExitPlayerWebViewFullscreen();
 
             if (uxWebVideoPlayer == null)
             {
@@ -798,37 +922,16 @@ namespace IndigoMovieManager
         // WebView2 の video 要素へ直接 full screen を要求し、表示だけは枠外へ広げる。
         private async void PlayerWebViewFullscreenButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_isWebViewPlayerActive || uxWebVideoPlayer?.CoreWebView2 == null)
+            if (
+                !_isWebViewPlayerActive
+                || uxWebVideoPlayer?.CoreWebView2 == null
+                || string.IsNullOrWhiteSpace(_currentWebViewPlayerPath)
+            )
             {
                 return;
             }
 
-            try
-            {
-                await uxWebVideoPlayer.ExecuteScriptAsync(
-                    """
-                    (() => {
-                      const target = document.querySelector('video') ?? document.documentElement;
-                      if (!target) {
-                        return;
-                      }
-
-                      if (document.fullscreenElement) {
-                        document.exitFullscreen();
-                        return;
-                      }
-
-                      if (target.requestFullscreen) {
-                        target.requestFullscreen();
-                      }
-                    })();
-                    """
-                );
-            }
-            catch
-            {
-                // 失敗しても通常表示は維持する。
-            }
+            await OpenDetachedPlayerFullscreenWindowAsync();
         }
     }
 }

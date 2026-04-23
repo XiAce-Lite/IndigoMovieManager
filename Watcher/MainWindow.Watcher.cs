@@ -208,11 +208,17 @@ namespace IndigoMovieManager
                         scanResult.NewMoviePaths,
                         watchStoppedByUiSuppression
                     );
-                    if (shouldReturnByMovieLoopPreparation)
+                    if (
+                        TryHandleWatchFolderPhaseResult(
+                            shouldReturnByMovieLoopPreparation,
+                            shouldBreakByMovieLoopPreparation,
+                            out bool shouldBreakCurrentFolderAfterPreparation
+                        )
+                    )
                     {
                         return;
                     }
-                    if (shouldBreakByMovieLoopPreparation)
+                    if (shouldBreakCurrentFolderAfterPreparation)
                     {
                         break;
                     }
@@ -293,11 +299,17 @@ namespace IndigoMovieManager
                         TryProcessWatchFolderMovieLoopAsync(),
                         watchStoppedByUiSuppression
                     );
-                    if (shouldReturnByMovieLoop)
+                    if (
+                        TryHandleWatchFolderPhaseResult(
+                            shouldReturnByMovieLoop,
+                            shouldBreakByMovieLoop,
+                            out bool shouldBreakCurrentFolderAfterMovieLoop
+                        )
+                    )
                     {
                         return;
                     }
-                    if (shouldBreakByMovieLoop)
+                    if (shouldBreakCurrentFolderAfterMovieLoop)
                     {
                         break;
                     }
@@ -344,11 +356,17 @@ namespace IndigoMovieManager
                         TryFlushWatchPendingMoviesAsync(),
                         watchStoppedByUiSuppression
                     );
-                    if (shouldReturnByPendingFlush)
+                    if (
+                        TryHandleWatchFolderPhaseResult(
+                            shouldReturnByPendingFlush,
+                            shouldBreakByPendingFlush,
+                            out bool shouldBreakCurrentFolderAfterPendingFlush
+                        )
+                    )
                     {
                         return;
                     }
-                    if (shouldBreakByPendingFlush)
+                    if (shouldBreakCurrentFolderAfterPendingFlush)
                     {
                         break;
                     }
@@ -396,11 +414,17 @@ namespace IndigoMovieManager
                     enqueueFlushTotalMs,
                     watchStoppedByUiSuppression
                 );
-                if (shouldReturnByCurrentFolderCompletion)
+                if (
+                    TryHandleWatchFolderPhaseResult(
+                        shouldReturnByCurrentFolderCompletion,
+                        shouldBreakByCurrentFolderCompletion,
+                        out bool shouldBreakCurrentFolder
+                    )
+                )
                 {
                     return;
                 }
-                if (shouldBreakByCurrentFolderCompletion)
+                if (shouldBreakCurrentFolder)
                 {
                     break;
                 }
@@ -442,6 +466,23 @@ namespace IndigoMovieManager
             }
 
             shouldBreakByUiSuppression = watchStoppedByUiSuppression;
+            return false;
+        }
+
+        // フォルダ各フェーズ後の return / break 判定を共通化し、同型の if を減らす。
+        private static bool TryHandleWatchFolderPhaseResult(
+            bool shouldReturn,
+            bool shouldBreakByUiSuppression,
+            out bool shouldBreakCurrentFolder
+        )
+        {
+            if (shouldReturn)
+            {
+                shouldBreakCurrentFolder = false;
+                return true;
+            }
+
+            shouldBreakCurrentFolder = shouldBreakByUiSuppression;
             return false;
         }
 

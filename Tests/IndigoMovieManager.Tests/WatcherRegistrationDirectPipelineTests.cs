@@ -92,6 +92,174 @@ public sealed class WatcherRegistrationDirectPipelineTests
     }
 
     [Test]
+    public async Task QueueWatchEventAsync_Created待機中でもrunnerは後続イベントを塞がない()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+        FileStream? createdMovieLock = null;
+
+        try
+        {
+            createdMovieLock = new FileStream(
+                createdMoviePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
+
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            SemaphoreSlim checkFolderRunLock = GetPrivateField<SemaphoreSlim>(
+                window,
+                "_checkFolderRunLock"
+            );
+            await checkFolderRunLock.WaitAsync();
+
+            TaskCompletionSource<string> queueRequested = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queueRequested.TrySetResult($"{mode}:{trigger}");
+            };
+
+            MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+            Task createdQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [CreateCreatedWatchEventRequest(createdMoviePath), "watch-created"]
+            )!;
+            await createdQueueTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Task renamedQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [
+                    CreateRenamedWatchEventRequest(
+                        Path.Combine(tempRoot, "after.mp4"),
+                        Path.Combine(tempRoot, "before.mp4")
+                    ),
+                    "watch-renamed",
+                ]
+            )!;
+            await renamedQueueTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.That(queueRequested.Task.IsCompleted, Is.False);
+
+            createdMovieLock.Dispose();
+            createdMovieLock = null;
+
+            string queuedRequest = await queueRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.That(queuedRequest, Is.EqualTo($"Watch:created:{createdMoviePath}"));
+
+            checkFolderRunLock.Release();
+        }
+        finally
+        {
+            createdMovieLock?.Dispose();
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task QueueWatchEventAsync_Created連続投入はready待ちを直列化して後続を先行解除まで待たせる()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string firstCreatedMoviePath = Path.Combine(tempRoot, "first-created.mp4");
+        string secondCreatedMoviePath = Path.Combine(tempRoot, "second-created.mp4");
+        await File.WriteAllBytesAsync(firstCreatedMoviePath, [0x1]);
+        await File.WriteAllBytesAsync(secondCreatedMoviePath, [0x1]);
+        FileStream? firstCreatedMovieLock = null;
+
+        try
+        {
+            // 先行 created だけを lock して、後続 created の先走り有無を観測する。
+            firstCreatedMovieLock = new FileStream(
+                firstCreatedMoviePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
+
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            List<string> queuedRequests = [];
+            object queuedRequestSync = new();
+            window.QueueCheckFolderAsyncForTesting = (mode, trigger) =>
+            {
+                lock (queuedRequestSync)
+                {
+                    queuedRequests.Add($"{mode}:{trigger}");
+                }
+
+                return Task.CompletedTask;
+            };
+
+            MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+            Task firstCreatedQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [CreateCreatedWatchEventRequest(firstCreatedMoviePath), "watch-created-first"]
+            )!;
+            Task secondCreatedQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [CreateCreatedWatchEventRequest(secondCreatedMoviePath), "watch-created-second"]
+            )!;
+            await firstCreatedQueueTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await secondCreatedQueueTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            // source 契約の 1 秒 retry を跨いでも後続 created が走らないことを確認する。
+            await Task.Delay(TimeSpan.FromMilliseconds(1250));
+            int queuedCountBeforeUnlock;
+            lock (queuedRequestSync)
+            {
+                queuedCountBeforeUnlock = queuedRequests.Count;
+            }
+            Assert.That(queuedCountBeforeUnlock, Is.EqualTo(0));
+
+            firstCreatedMovieLock.Dispose();
+            firstCreatedMovieLock = null;
+
+            await WaitUntilAsync(
+                () =>
+                {
+                    lock (queuedRequestSync)
+                    {
+                        return queuedRequests.Count >= 2;
+                    }
+                },
+                TimeSpan.FromSeconds(5),
+                "created 連続投入の queue 要求が2件そろいませんでした。"
+            );
+
+            List<string> queuedRequestSnapshot;
+            lock (queuedRequestSync)
+            {
+                queuedRequestSnapshot = [.. queuedRequests];
+            }
+
+            Assert.That(
+                queuedRequestSnapshot,
+                Is.EqualTo(
+                    [
+                        $"Watch:created:{firstCreatedMoviePath}",
+                        $"Watch:created:{secondCreatedMoviePath}",
+                    ]
+                )
+            );
+        }
+        finally
+        {
+            firstCreatedMovieLock?.Dispose();
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public async Task ProcessWatchEventAsync_Created_zeroByteはQueueCheckFolderAsyncへ流さない()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -152,6 +320,101 @@ public sealed class WatcherRegistrationDirectPipelineTests
         }
         finally
         {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task QueueWatchEventAsync_Created_ready待ち中でもRenamedは先行処理できる()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+        FileStream? createdMovieLock = null;
+
+        try
+        {
+            // created の ready 判定を待機させ、queue runner が後続イベントを先に流せるか観測する。
+            createdMovieLock = new FileStream(
+                createdMoviePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None
+            );
+
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            MainWindowViewModel mainVm = GetPrivateField<MainWindowViewModel>(window, "MainVM");
+            const string oldMoviePath = @"E:\Movies\before.mp4";
+            const string newMoviePath = @"E:\Movies\after.mp4";
+            MovieRecords renamedMovie = new()
+            {
+                Movie_Id = 1,
+                Movie_Path = oldMoviePath,
+                Movie_Name = "before",
+            };
+            mainVm.MovieRecs = [renamedMovie];
+
+            SemaphoreSlim checkFolderRunLock = new(0, 1);
+            SetPrivateField(window, "_checkFolderRunLock", checkFolderRunLock);
+
+            TaskCompletionSource<string> queueRequested = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queueRequested.TrySetResult($"{mode}:{trigger}");
+            };
+
+            MethodInfo queueMethod = GetQueueWatchEventAsyncRequestMethod();
+            object createdRequest = CreateCreatedWatchEventRequest(createdMoviePath);
+            object renamedRequest = CreateRenamedWatchEventRequest(newMoviePath, oldMoviePath);
+
+            Task createdQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [createdRequest, "watch-created"]
+            )!;
+            Task renamedQueueTask = (Task)queueMethod.Invoke(
+                window,
+                [renamedRequest, "watch-renamed"]
+            )!;
+
+            await WaitUntilAsync(
+                () =>
+                    string.Equals(
+                        renamedMovie.Movie_Path,
+                        newMoviePath,
+                        StringComparison.OrdinalIgnoreCase
+                    ),
+                TimeSpan.FromSeconds(5),
+                "created ready待ち中に rename の更新が進みませんでした。"
+            );
+
+            Assert.That(createdQueueTask.IsCompleted, Is.True);
+            Assert.That(renamedQueueTask.IsCompleted, Is.True);
+            Assert.That(queueRequested.Task.IsCompleted, Is.False);
+            Assert.That(GetPrivateField<bool>(window, "_hasPendingCheckFolderRequest"), Is.False);
+
+            createdMovieLock.Dispose();
+            createdMovieLock = null;
+
+            string queuedRequest = await queueRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await WaitUntilAsync(
+                () => GetPrivateField<bool>(window, "_hasPendingCheckFolderRequest"),
+                TimeSpan.FromSeconds(5),
+                "_hasPendingCheckFolderRequest が true になりませんでした。"
+            );
+
+            Assert.That(queuedRequest, Is.EqualTo($"Watch:created:{createdMoviePath}"));
+
+            checkFolderRunLock.Release();
+        }
+        finally
+        {
+            createdMovieLock?.Dispose();
             if (Directory.Exists(tempRoot))
             {
                 Directory.Delete(tempRoot, recursive: true);
@@ -330,6 +593,11 @@ public sealed class WatcherRegistrationDirectPipelineTests
             IndigoMovieManager.Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
             MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
             InitializeWatchEventQueue(window);
+            SemaphoreSlim eventRunLock = GetPrivateField<SemaphoreSlim>(
+                window,
+                "_watchEventRunLock"
+            );
+            await eventRunLock.WaitAsync();
             Task beforeTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
 
             MethodInfo fileRenamed = typeof(MainWindow).GetMethod(
@@ -351,6 +619,8 @@ public sealed class WatcherRegistrationDirectPipelineTests
 
             Task processingTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
             Assert.That(processingTask, Is.Not.SameAs(beforeTask));
+            Assert.That(processingTask.IsCompleted, Is.False);
+            eventRunLock.Release();
             await processingTask;
         }
         finally
@@ -396,6 +666,20 @@ public sealed class WatcherRegistrationDirectPipelineTests
         return method;
     }
 
+    private static MethodInfo GetQueueWatchEventAsyncRequestMethod()
+    {
+        Type requestType = GetWatchEventRequestType();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "QueueWatchEventAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [requestType, typeof(string)],
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return method;
+    }
+
     private static void InitializeWatchEventQueue(MainWindow window)
     {
         SetPrivateField(window, "_watchEventRunLock", new SemaphoreSlim(1, 1));
@@ -404,6 +688,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         Type requestQueueType = typeof(Queue<>).MakeGenericType(requestType);
         SetPrivateField(window, "_watchEventRequests", Activator.CreateInstance(requestQueueType)!);
         SetPrivateField(window, "_watchEventProcessingTask", Task.CompletedTask);
+        SetPrivateField(window, "_watchCreatedEventProcessingTask", Task.CompletedTask);
     }
 
     private static object CreateCreatedWatchEventRequest(string fullPath)
@@ -424,6 +709,26 @@ public sealed class WatcherRegistrationDirectPipelineTests
         )!;
         Assert.That(constructor, Is.Not.Null);
         return constructor.Invoke([createdKind, fullPath, ""]);
+    }
+
+    private static object CreateRenamedWatchEventRequest(string fullPath, string oldFullPath)
+    {
+        Type watchEventKindType = typeof(MainWindow).GetNestedType(
+            "WatchEventKind",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(watchEventKindType, Is.Not.Null);
+
+        object renamedKind = Enum.Parse(watchEventKindType, "Renamed");
+        Type requestType = GetWatchEventRequestType();
+        ConstructorInfo constructor = requestType.GetConstructor(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            types: [watchEventKindType, typeof(string), typeof(string)],
+            modifiers: null
+        )!;
+        Assert.That(constructor, Is.Not.Null);
+        return constructor.Invoke([renamedKind, fullPath, oldFullPath]);
     }
 
     private static Type GetWatchEventRequestType()

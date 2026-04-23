@@ -11,6 +11,7 @@ namespace IndigoMovieManager
         private readonly object _watchEventRequestSync = new();
         private readonly Queue<WatchEventRequest> _watchEventRequests = new();
         private Task _watchEventProcessingTask = Task.CompletedTask;
+        private Task _watchCreatedEventProcessingTask = Task.CompletedTask;
 
         // watch イベント要求を共通 queue へ積み、イベントハンドラから重い処理を切り離す。
         private Task QueueWatchEventAsync(WatchEventRequest request, string trigger)
@@ -40,7 +41,7 @@ namespace IndigoMovieManager
             return processingTask;
         }
 
-        // Created / Renamed はイベント順を守った方が安全なため、単一ランナーで直列処理する。
+        // Renamed は直列処理を保ち、Created の ready 待ちは別タスクへ逃がして後続イベントを詰まらせない。
         private async Task ProcessWatchEventQueueAsync()
         {
             await _watchEventRunLock.WaitAsync();
@@ -53,18 +54,86 @@ namespace IndigoMovieManager
                     {
                         if (_watchEventRequests.Count < 1)
                         {
+                            _watchEventProcessingTask = Task.CompletedTask;
                             break;
                         }
 
                         request = _watchEventRequests.Dequeue();
                     }
 
-                    await ProcessWatchEventAsync(request);
+                    await ProcessQueuedWatchEventAsync(request);
                 }
             }
             finally
             {
                 _watchEventRunLock.Release();
+            }
+        }
+
+        // Created のコピー待ちは長くなるため、queue runner から切り離して rename などを先へ流す。
+        private Task ProcessQueuedWatchEventAsync(WatchEventRequest request)
+        {
+            if (request.Kind == WatchEventKind.Created)
+            {
+                StartCreatedWatchEventReadyPipeline(request.FullPath);
+                return Task.CompletedTask;
+            }
+
+            return ProcessWatchEventAsync(request);
+        }
+
+        private void StartCreatedWatchEventReadyPipeline(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath))
+            {
+                return;
+            }
+
+            // Created の ready 待ちは queue runner から切り離しつつ、created 同士は直列化して過剰並列を防ぐ。
+            lock (_watchEventRequestSync)
+            {
+                Task previousTask = _watchCreatedEventProcessingTask ?? Task.CompletedTask;
+                _watchCreatedEventProcessingTask = ChainCreatedWatchEventReadyPipelineAsync(
+                    previousTask,
+                    fullPath
+                );
+            }
+
+            DebugRuntimeLog.Write(
+                "watch",
+                $"created event ready wait detached: '{fullPath}'"
+            );
+        }
+
+        private async Task ChainCreatedWatchEventReadyPipelineAsync(
+            Task previousTask,
+            string fullPath
+        )
+        {
+            try
+            {
+                await previousTask;
+            }
+            catch
+            {
+                // 先行タスク失敗があっても後続 created は止めない。
+            }
+
+            await ProcessCreatedWatchEventReadyPipelineAsync(fullPath);
+        }
+
+        private async Task ProcessCreatedWatchEventReadyPipelineAsync(string fullPath)
+        {
+            try
+            {
+                await ProcessCreatedWatchEventAsync(fullPath);
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch",
+                    $"created watch event processing failed: path='{fullPath}' err='{ex.GetType().Name}: {ex.Message}'"
+                );
             }
         }
 

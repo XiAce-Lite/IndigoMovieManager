@@ -372,7 +372,7 @@
     <DynamicResource ResourceKey="MaterialDesignPaper" />
   </Window.Background>
 
-  <Grid>
+  <Grid x:Name="MainWindowRoot">
     <avalonDock:DockingManager x:Name="uxDockingManager" Margin="0,48,0,0">
       <avalonDock:DockingManager.Theme>
         <DynamicResource ResourceKey="AvalonDockTheme" />
@@ -756,30 +756,6 @@
                               VerticalAlignment="Stretch"
                               Visibility="Collapsed"
                             />
-                            <Border
-                              x:Name="PlayerWebViewActionBar"
-                              Grid.Row="0"
-                              Margin="0,8,8,0"
-                              Padding="4"
-                              HorizontalAlignment="Right"
-                              VerticalAlignment="Top"
-                              Background="#66000000"
-                              CornerRadius="8"
-                              Visibility="Collapsed"
-                              Panel.ZIndex="10"
-                            >
-                              <Button
-                                Width="36"
-                                Height="36"
-                                Padding="0"
-                                Background="{x:Null}"
-                                BorderThickness="0"
-                                Click="PlayerWebViewFullscreenButton_Click"
-                                Content="{materialDesign:PackIcon Kind=ArrowExpandAll}"
-                                Style="{StaticResource MaterialDesignIconButton}"
-                                ToolTip="全画面"
-                              />
-                            </Border>
                             <StackPanel
                               x:Name="PlayerController"
                               Grid.Row="1"
@@ -1645,7 +1621,10 @@
       </avalonDock:LayoutRoot>
     </avalonDock:DockingManager>
 
-    <materialDesign:DrawerHost IsLeftDrawerOpen="{Binding IsChecked, ElementName=MenuToggleButton}">
+    <materialDesign:DrawerHost
+      x:Name="MainDrawerHost"
+      IsLeftDrawerOpen="{Binding IsChecked, ElementName=MenuToggleButton}"
+    >
       <materialDesign:DrawerHost.LeftDrawerContent>
         <DockPanel MinWidth="220">
           <ToggleButton

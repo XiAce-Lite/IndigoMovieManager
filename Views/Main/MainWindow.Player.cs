@@ -402,6 +402,18 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (_isDetachedPlayerFullscreenActive)
+            {
+                if (uxWebVideoPlayer != null)
+                {
+                    // 全画面中は専用Window側で全面ストレッチさせ、MainWindow側サイズは持ち込まない。
+                    uxWebVideoPlayer.Width = double.NaN;
+                    uxWebVideoPlayer.Height = double.NaN;
+                }
+
+                return;
+            }
+
             double controllerHeight = PlayerController.Visibility == Visibility.Visible
                 ? (
                     PlayerController.ActualHeight > 1d
@@ -485,6 +497,7 @@ namespace IndigoMovieManager
 
         private void CloseManualPlayerOverlay()
         {
+            _ = ForceCloseMainWindowPlayerFullscreenAsync();
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
@@ -503,6 +516,11 @@ namespace IndigoMovieManager
 
         private bool TryHandleManualPlayerShortcut(KeyEventArgs e)
         {
+            if (TryHandleMainWindowPlayerFullscreenShortcut(e))
+            {
+                return true;
+            }
+
             if (
                 e == null
                 || e.Key != Key.Escape

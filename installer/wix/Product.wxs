@@ -19,8 +19,31 @@
       </Directory>
     </StandardDirectory>
 
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="$(var.ProductName)">
+        <Component Id="ApplicationStartMenuShortcut" Guid="*">
+          <!-- 初回 install 後に迷わず起動できるよう、Start Menu だけへ導線を置く。 -->
+          <Shortcut
+            Id="ApplicationStartMenuShortcut"
+            Name="$(var.ProductName)"
+            Description="$(var.ProductName)"
+            Target="[INSTALLFOLDER]$(var.MainExeName)"
+            WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+          <RegistryValue
+            Root="HKCU"
+            Key="Software\$(var.Manufacturer)\$(var.ProductName)"
+            Name="StartMenuShortcut"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
     <Feature Id="MainFeature" Title="$(var.ProductName)" Level="1">
       <ComponentGroupRef Id="ApplicationFiles" />
+      <ComponentRef Id="ApplicationStartMenuShortcut" />
     </Feature>
   </Package>
 

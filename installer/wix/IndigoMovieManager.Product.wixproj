@@ -15,6 +15,7 @@
       InstallerCulture=$(ImmInstallerCulture);
       InstallerLanguage=$(ImmInstallerLanguage);
       InstallDirName=$(ImmInstallerInstallDirName);
+      MainExeName=$(ImmInstallerMainExeName);
       VerifiedPackageRoot=$(ImmInstallerPackageRoot);
       VerifiedPackageDir=$(ImmInstallerVerifiedPackageDir);
       VerifiedPackageVersion=$(ImmInstallerVerifiedPackageVersion);

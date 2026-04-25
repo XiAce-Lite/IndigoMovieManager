@@ -57,9 +57,31 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(upperTabPlayerSource, Does.Not.Contain("notifyVolume();"));
     }
 
+    [Test]
+    public void PlayerThumbnailClick_選択同期でスクロール位置を動かさない()
+    {
+        string selectionSource = GetMainWindowSelectionSourceText();
+
+        Assert.That(selectionSource, Does.Contain("SelectPlayerThumbnailRecordWithoutScroll(label, record);"));
+        Assert.That(selectionSource, Does.Contain("return;"));
+        Assert.That(
+            selectionSource,
+            Does.Contain("private void SelectPlayerThumbnailRecordWithoutScroll(Label label, MovieRecords record)")
+        );
+        Assert.That(selectionSource, Does.Contain("_suppressPlayerThumbnailSelectionChanged = true;"));
+        Assert.That(selectionSource, Does.Contain("SyncPlayerThumbnailSelectionAcrossViews(sourceList, record);"));
+        Assert.That(selectionSource, Does.Contain("ShowExtensionDetail(record);"));
+        Assert.That(selectionSource, Does.Contain("ShowTagEditor(record);"));
+    }
+
     private static string GetMainWindowPlayerSourceText()
     {
         return GetRepoText("Views", "Main", "MainWindow.Player.cs");
+    }
+
+    private static string GetMainWindowSelectionSourceText()
+    {
+        return GetRepoText("Views", "Main", "MainWindow.Selection.cs");
     }
 
     private static string GetUpperTabPlayerSourceText()

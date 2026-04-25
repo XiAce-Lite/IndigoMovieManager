@@ -735,6 +735,7 @@ namespace IndigoMovieManager
 
                     player.muted = {{(mute ? "true" : "false")}};
                     player.volume = {{volume}};
+                    player.dataset.indigoPlayerHostVolumeApplied = '1';
 
                     const playPromise = player.play();
                     if (playPromise) {
@@ -1058,13 +1059,16 @@ namespace IndigoMovieManager
                     player.controls = true;
 
                     const notifyVolume = () => {
+                      if (player.dataset.indigoPlayerHostVolumeApplied !== '1') {
+                        return;
+                      }
+
                       try {
                         chrome.webview.postMessage(`player-volume:${player.volume}`);
                       } catch {}
                     };
 
                     player.addEventListener('volumechange', notifyVolume);
-                    notifyVolume();
                   };
 
                   if (document.readyState === 'loading') {

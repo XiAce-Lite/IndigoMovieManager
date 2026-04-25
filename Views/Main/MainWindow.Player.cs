@@ -54,7 +54,7 @@ namespace IndigoMovieManager
             }
 
             _ = uxWebVideoPlayer.ExecuteScriptAsync(
-                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; }}"
+                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; }}"
             );
         }
 

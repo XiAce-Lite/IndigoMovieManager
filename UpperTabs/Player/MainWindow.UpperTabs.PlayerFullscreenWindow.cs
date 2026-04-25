@@ -352,6 +352,7 @@ namespace IndigoMovieManager
 
                     player.muted = false;
                     player.volume = {{volume}};
+                    player.dataset.indigoPlayerHostVolumeApplied = '1';
 
                     const playPromise = player.play();
                     if (playPromise) {

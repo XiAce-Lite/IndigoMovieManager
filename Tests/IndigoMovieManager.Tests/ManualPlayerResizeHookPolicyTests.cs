@@ -40,12 +40,44 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(source, Does.Contain("QueuePlayerVolumeSettingSave();"));
     }
 
+    [Test]
+    public void WebViewPlayer_ホスト音量適用前の既定音量通知を抑止する()
+    {
+        string mainWindowPlayerSource = GetMainWindowPlayerSourceText();
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+        string fullscreenWindowSource = GetUpperTabPlayerFullscreenWindowSourceText();
+
+        Assert.That(mainWindowPlayerSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
+        Assert.That(upperTabPlayerSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
+        Assert.That(fullscreenWindowSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("player.dataset.indigoPlayerHostVolumeApplied !== '1'")
+        );
+        Assert.That(upperTabPlayerSource, Does.Not.Contain("notifyVolume();"));
+    }
+
     private static string GetMainWindowPlayerSourceText()
+    {
+        return GetRepoText("Views", "Main", "MainWindow.Player.cs");
+    }
+
+    private static string GetUpperTabPlayerSourceText()
+    {
+        return GetRepoText("UpperTabs", "Player", "MainWindow.UpperTabs.PlayerTab.cs");
+    }
+
+    private static string GetUpperTabPlayerFullscreenWindowSourceText()
+    {
+        return GetRepoText("UpperTabs", "Player", "MainWindow.UpperTabs.PlayerFullscreenWindow.cs");
+    }
+
+    private static string GetRepoText(params string[] relativePathParts)
     {
         DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);
         while (current != null)
         {
-            string candidate = Path.Combine(current.FullName, "Views", "Main", "MainWindow.Player.cs");
+            string candidate = Path.Combine([current.FullName, .. relativePathParts]);
             if (File.Exists(candidate))
             {
                 return File.ReadAllText(candidate);
@@ -54,7 +86,7 @@ public sealed class ManualPlayerResizeHookPolicyTests
             current = current.Parent;
         }
 
-        Assert.Fail("MainWindow.Player.cs の位置を repo root から解決できませんでした。");
+        Assert.Fail($"{Path.Combine(relativePathParts)} の位置を repo root から解決できませんでした。");
         return string.Empty;
     }
 }

@@ -1,8 +1,11 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-23
+最終更新日: 2026-04-24
 
 変更概要:
+- 全体計画の再構築に合わせ、実行レーンを `UIスレッド簡素化`、`diff-first UI`、`watcher/poll 境界安定化`、`起動 warm path`、`visible-first / Player`、`skin 別レーン` の順へ整理した
+- `Watcher.cs` の薄化は独立目標から外し、UI thread / queue / shutdown の詰まりを減らす時だけ進める方針へ変更した
+- `fire-and-forget` の増加ではなく、bounded drain とログを持つ queue / persister / scheduler へ寄せることを固定した
 - 文書の主軸を `rescue` や個別機能の列挙ではなく、`Watcher / UI差分反映` 主導の実行レーンへ組み替えた
 - この文書の役割を「本線で今進める実行レーンと完了条件の正本」に絞り、全体プランとの役割重複を減らした
 - `rescue / repair` は新規主戦場ではなく、通常動画テンポを壊さないための維持レーンへ再定義した
@@ -33,6 +36,12 @@
 - 再読込ボタンや大量変更で最終的に full reload へ戻る周回では、途中の `repair view by existing-db-movie` を止め、最終 `full reload` に一本化してログ氾濫と無駄な局所反映を避けるようにした
 - 再読込ボタンは `full filter-sort` と `Manual scan` を並走させず、watch 抑止下で直列化して `FilterAndSort(true) + Manual scan + EverythingPoll` の三重化を避けるようにした
 - さらに `manual-reload` 抑止解除直後の catch-up `Watch` は積まず、再読込直後に `watch_zero_diff reconcile` が全量再走査を重ねる二度踏みを止めるようにした
+- さらに `manual-reload` 抑止中は `missing-thumb rescue` も同じ周回では走らせず、一覧更新直後に欠損救済キューが雪崩れて UI を止める経路を避けるようにした
+- さらに `Header.ReloadButton` 由来の `Manual scan` は再読込完了後に `ApplicationIdle + 250ms` だけ遅延して投入し、一覧更新の完了を先に返すようにした
+- さらにプレーヤータブ右側一覧は `Diff/Move` を許可し、`Reset` と追加 `Refresh()` を避けて再読込直後の画像再評価を減らすようにした
+- さらに `Header.ReloadButton:deferred` の `Manual scan` 実行中も `missing-thumb rescue` を止め、遅延scan完了直後に救済が雪崩れないようにした
+- さらに `manual-reload` 開始時に watch scan scope を進め、走行中の `Auto / Watch` scan を stale 扱いで早めに畳むようにした
+- さらにプレーヤータブ右側一覧の画像バインドは、active tab 判定だけでなく viewport の可視・近傍キーにも通し、再読込直後の off-screen `image cache hit` 雪崩を減らす方向へ寄せた
 - 下部 `ThumbnailProgress` タブが非表示の時は snapshot refresh を即時 UI 更新せず dirty 記録だけへ寄せ、サムネ成功直後の hidden progress 更新が `activity=None` を増やす経路を細くし始めた
 - `SearchSidecar` は本線リポから一旦外し、別リポで継続検証する方針へ切り替えた
 - 本線の検索 hot path は、sidecar を使わず既存 `SearchService` 正本のまま `MovieRecords` 単位 cache で軽量化する方針へ寄せた
@@ -117,13 +126,15 @@
 
 この方針を成立させるため、この文書では以下の実行レーンで進める。
 
-1. Lane 0: 計測固定
-2. Lane 1: `Watcher.cs` 本体の薄化完了
+1. Lane 0: 計測固定と作業差分保全
+2. Lane 1: UIスレッド簡素化と入力優先
 3. Lane 2: watch change set と diff-first UI の一本化
-4. Lane 3: 起動 warm path の再短縮
-5. Lane 4: visible-first 画像供給の徹底
-6. Lane 5: `skin` 切り替えの表示・保存完全分離
-7. Lane 6: rescue / repair 維持レーン
+4. Lane 3: watcher / poll / shutdown 境界の安定化
+5. Lane 3.5: `UiHang` オーバーレイ寿命管理の是正
+6. Lane 4: 起動 warm path の再短縮
+7. Lane 5: visible-first / Player / 画像供給
+8. Lane 6: `skin` 切り替えの表示・保存完全分離
+9. Lane 7: rescue / repair 維持レーン
 
 ## 4. 非機能の固定ルール
 
@@ -138,14 +149,17 @@
 
 ## 5. 実行レーン
 
-## Lane 0: 計測の固定
+## Lane 0: 計測固定と作業差分保全
 
 目的:
 - 改善前後を感覚ではなく数値で比較できるようにする。
+- 未コミットの別作業を混ぜず、計画・実装・検証の単位を小さく保つ。
 
 実施内容:
 - `filter start/end`、watch reload、page append、thumbnail decode、skin refresh の trace id を揃える。
 - 指標を `debug-runtime.log` で横断して読めるようにする。
+- 着手前に `git status --short` で対象外差分を確認する。
+- `layout*.xml` や実機操作で動く差分は、目的が一致する時だけ扱う。
 - 最低限の計測点を固定する。
   - 起動: `ContentRendered -> first-page shown`
   - 一覧: `search input -> filtered apply end`
@@ -155,24 +169,24 @@
 
 完了条件:
 - どこが遅いかを「起動」「一覧」「watch」「skin」「画像」で分けて説明できる。
+- コミットが 1 目的で、対象外差分を含まない。
 
-## Lane 1: `Watcher.cs` 本体の薄化完了
+## Lane 1: UIスレッド簡素化と入力優先
 
 目的:
-- `Watcher.cs` を orchestration に寄せ、watch の本流を `queue orchestration / folder orchestration / final dispatch` へ縮める。
-- pure policy、runtime helper、storage helper、DTO を外へ出し、watch 改修時の読み解きコストを下げる。
+- watch / DB / thumbnail / skin / poll の仕事が、検索入力、ページ移動、Player 操作、描画を塞がないようにする。
+- ユーザーの明示操作を、背後処理より先に通す。
 
 実施内容:
-- `Watcher/MainWindow.Watcher.cs` から、scope / background scan / last sync / thumbnail queue / UI suppression / deferred scan / rescue / DTO の塊を partial へ切り出し続ける。
-- `CheckFolderAsync(...)` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を coordinator / policy / runtime へ寄せる。
-- `QueueCheckFolderAsync(...)` と `ProcessCheckFolderQueueAsync(...)` の入口を薄くし、mode 圧縮や dispatcher 判断を専用 helper へ寄せる。
-- 直近到達点として、`watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` に加え、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`run finish`、`folder failure recovery result` も helper / runtime 1 呼び出しへ寄せ終わっている。次は runtime context 生成後の小粒な受け渡しと `final dispatch` 手前の局所分岐をさらに減らす。
-- さらに `watch folder` 解決、`PrepareWatchFolderScanAsync(...)`、`TryBeginWatchFolderMovieLoop(...)`、`AwaitAndApplyWatchLoopDecisionAsync(...)`、`TryHandleWatchFolderPhaseResult(...)`、`TryFinishWatchRunAndReturnAsync(...)` を追加し、`CheckFolderAsync(...)` の各段の入口と出口を同じ読み筋へ寄せた。
+- `Search / page / Player / tab` 操作中は、`Auto / Watch`、`watch_zero_diff reconcile`、rescue、thumbnail progress、poll を必要に応じて defer する。
+- UI スレッド上の DB read/write、catalog scan、file metadata、decode、collection 全差し替えを見つけたら、まず snapshot / queue / background read へ分離する。
+- `fire-and-forget` で逃がすだけにせず、bounded drain、timeout ログ、fault ログを持つ scheduler / persister / queue へ寄せる。
+- `Watcher.cs` の薄化は、UI thread 滞在、queue 境界、shutdown 境界、観測性の改善につながる場合だけ進める。
 
 完了条件:
-- `Watcher.cs` の責務を短く説明できる。
-- watch の純粋判定と状態管理が `Watcher.cs` 本体に貼り付かない。
-- watch の入口変更時に、影響範囲を partial 単位で追える。
+- 明示的なユーザー操作中に、背後処理が full reload / full scan / heavy DB I/O を重ねない。
+- UI スレッドに残る仕事を、短い snapshot と ObservableCollection 反映へ説明できる。
+- queue / scheduler / persister の終了時動作を `input stop -> complete -> bounded drain -> timeout log` で説明できる。
 
 ## Lane 2: watch change set と diff-first UI の一本化
 
@@ -204,7 +218,23 @@
 - watch の 1 件追加や rename で `Refresh()` 全面経路を常に踏まない。
 - 「小規模差分」と「全面再評価」の境界がコード上で説明できる。
 
-## Lane 3: 起動 warm path の再短縮
+## Lane 3: watcher / poll / shutdown 境界の安定化
+
+目的:
+- Watcher と Everything poll を別スレッド化・非同期化しても、終了時や DB 切替時に取りこぼしや二重実行を出さない。
+
+実施内容:
+- `FileSystemWatcher` 入力停止、watch event queue complete、created ready pipeline drain、Everything poll 停止を順序付きで扱う。
+- low-update 時の poll interval 延長を、初期処理が落ち着いた後だけ有効化する。
+- `watch folder snapshot` と eligible 判定 cache の invalidation 条件を、DB 切替 / watch folder 編集 / settings 変更へ限定する。
+- queue の mode 圧縮で trigger / path の因果が消えすぎる箇所は、ログか軽量 DTO で追えるようにする。
+
+完了条件:
+- shutdown 中に watcher / poll / created pipeline が新規要求を増やさない。
+- low-update 時の poll 延長が、初期同期や大量変更の見逃しを生まない。
+- `debug-runtime.log` だけで event accepted / deferred / drained / skipped を追える。
+
+## Lane 4: 起動 warm path の再短縮
 
 目的:
 - first-page を最優先し、その後ろへ送れる処理は `ContentRendered` や `ApplicationIdle` 後へ寄せる。
@@ -221,22 +251,25 @@
 - 起動完了を 1 点ではなく、3 段階のイベントで説明できる。
 - 大 DB でも first-page 直後の入力待ちがさらに短くなる。
 
-## Lane 4: Visible-first 画像供給の徹底
+## Lane 5: visible-first / Player / 画像供給
 
 目的:
 - 一覧スクロール、ページ Up/Down、詳細表示で「見える範囲に関係ない I/O」を減らす。
+- Player / UpperTabs の表示・再生操作を、一覧や watcher の背後処理から守る。
 
 実施内容:
 - `NoLockImageConverter` の metadata cache を viewport 連動で活かし、表示候補の先読みと無効化を分ける。
 - visible range 外の decode をより後ろへ倒し、可視範囲だけ即時 decode する。
 - 画像存在確認と file stamp 取得を、converter 個別呼び出しから `ThumbnailStampCache` 相当へ寄せる。
 - 詳細パネル、タグ、bookmark などの補助 UI は、表示された時だけ decode / bind を始める。
+- Player / UpperTabs の追加・ fullscreen・表示切替は、watch / thumbnail / skin の背後処理と同時に走っても UI スレッドを長く掴まない形へ寄せる。
 
 完了条件:
 - ページ Up/Down 時の体感引っかかりが、cache miss 頻度とともに下がる。
 - off-screen 領域の decode が visible 領域を押しのけない。
+- Player 操作中に watch / thumbnail / poll が目に見える詰まりを増やさない。
 
-## Lane 4.5: `UiHang` オーバーレイ寿命管理の是正
+## Lane 3.5: `UiHang` オーバーレイ寿命管理の是正
 
 目的:
 - 終了後に overlay が取り残される事象を、見た目のごまかしではなく寿命管理の正攻法で止める。
@@ -252,7 +285,7 @@
 - overlay 残留対策が、平常時の UI hang 通知誤抑止を生まない。
 - `debug-runtime.log` だけで `hide request -> stop requested -> thread destroyed` まで追える。
 
-## Lane 5: `skin` 切り替えの表示・保存完全分離
+## Lane 6: `skin` 切り替えの表示・保存完全分離
 
 目的:
 - skin 切り替えを UI テンポ視点でさらに細くし、見た目更新と保存の干渉を切る。
@@ -267,7 +300,7 @@
 - skin 切り替え 1 回で、不要な catalog / DB / refresh の重なりがさらに減る。
 - `skin-webview`、`skin-catalog`、`skin-db` を同じ trace で追える。
 
-## Lane 6: rescue / repair 維持レーン
+## Lane 7: rescue / repair 維持レーン
 
 目的:
 - rescue / repair を新規主戦場として広げず、通常動画テンポを壊さない範囲で維持・棚卸しする。
@@ -285,40 +318,45 @@
 
 実装順は次で固定する。
 
-1. Lane 0 計測固定
-2. Lane 1 `Watcher.cs` 本体の薄化完了
+1. Lane 0 計測固定と作業差分保全
+2. Lane 1 UIスレッド簡素化と入力優先
 3. Lane 2 watch change set と diff-first UI の一本化
-4. Lane 3 起動 warm path の再短縮
-5. Lane 4 Visible-first 画像供給
-6. Lane 5 `skin` 切り替え完全分離
-7. Lane 6 rescue / repair 維持レーン
+4. Lane 3 watcher / poll / shutdown 境界の安定化
+5. Lane 3.5 `UiHang` オーバーレイ寿命管理の是正
+6. Lane 4 起動 warm path の再短縮
+7. Lane 5 visible-first / Player / 画像供給
+8. Lane 6 `skin` 切り替え完全分離
+9. Lane 7 rescue / repair 維持レーン
 
 理由:
-- 先に `Watcher` 本体と一覧側の全面再評価構造を崩さないと、watch や skin を個別最適化しても効果が頭打ちになるため。
+- 先に UI スレッドを塞ぐ経路と全面再評価構造を減らさないと、watch / skin / Player を個別最適化しても体感差が頭打ちになるため。
 
 ## 7. 直近の着手順
 
 ### Step 1
 
-- `Watcher.cs` に残っている入口責務を棚卸しし、`queue orchestration`、`folder orchestration`、`final dispatch` 以外を外へ出す。
-- 直近では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口だけでなく、`context 初期化`、`background scan`、`scan pipeline`、`movie loop`、`pending flush`、`run finish` まで helper 化が進んだ。次は runtime context 組み立て後の小粒な受け渡し整理へ進む。
+- 現在の未コミット差分を確認し、対象外ファイルを混ぜずに区切る。
+- `layout*.xml` や Player / UpperTabs の実機操作差分がある時は、それを優先作業として扱うか、計画更新とは完全に分離する。
 
 ### Step 2
 
-- `FilterAndSortAsync(...)` の呼び出し元を棚卸しし、`full reload`、`query recompute`、`watch reload` の 3 群へ分類する。
+- UI スレッドを塞ぐ可能性が高い入口を、`search / reload / Player / watcher / thumbnail / skin` の順に棚卸しする。
+- 背後処理を止める、遅らせる、queue 化する、snapshot だけ UI で取る、のどれで解くかを決める。
 
 ### Step 3
 
-- `MovieChangeSet` と `QueryState` の最小 DTO を追加し、watch 終端の既定経路を差分 apply 優先へ寄せる。
-- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路と、query-only incremental watch 時の必要時限定 metadata probe、`{dup}` 時の安全fallback は導入済みである。次は `Hash` を cheap に安全判定できる条件を見極め、`SortMovies(...)` 全体再整列をさらに減らす。
+- `FilterAndSortAsync(...)` の呼び出し元を、`full snapshot reload`、`query only recompute`、`item diff apply` の 3 群へ再分類する。
+- `changed paths + ChangeKind + DirtyFields + ObservedState` がある経路では、full reload へ戻る理由を必ず明示する。
 
 ### Step 4
 
-- 起動 warm path と visible-first 画像供給のどちらを先に切るかを、`first-page shown` と `viewport request -> image ready` の計測で決める。
+- watcher / poll / shutdown は、`input stop -> complete -> bounded drain -> timeout log` の順序を守る。
+- low-update 時の poll interval 延長は、初期処理が落ち着いた後だけ有効化する。
 
 ### Step 5
 
-- `UiHang` オーバーレイ残留は、`NativeOverlayHost` の owner 化、caller 側 hide 保証、overlay thread 強制閉鎖線の順に進め、無通信 timer は shutdown 専用 fuse としてのみ最後に評価する。
+- 起動 warm path と visible-first / Player のどちらを先に切るかを、`first-page shown`、`input ready`、`viewport request -> image ready`、Player 操作ログで決める。
+- `skin` は別レーンとして、runtime bridge 境界固定と `refresh / catalog / DB` 分離を混ぜずに進める。
 
 ## 8. 受け入れ基準
 

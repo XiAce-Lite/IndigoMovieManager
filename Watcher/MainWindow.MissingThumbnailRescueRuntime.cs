@@ -45,6 +45,26 @@ namespace IndigoMovieManager
                 return;
             }
 
+            // 手動再読み込み中は一覧更新の完了を最優先し、重い欠損救済はこの周回では走らせない。
+            if (mode == CheckMode.Manual && IsManualReloadUiSuppressionActive())
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip missing-thumb rescue by manual-reload: tab={snapshotTabIndex} db='{snapshotDbFullPath}'"
+                );
+                return;
+            }
+
+            // deferred manual scan の1回全体でも救済を止め、後ろからの雪崩を防ぐ。
+            if (mode == CheckMode.Manual && IsManualReloadDeferredRescueSuppressionActive())
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip missing-thumb rescue by deferred-manual-reload: tab={snapshotTabIndex} db='{snapshotDbFullPath}'"
+                );
+                return;
+            }
+
             MissingThumbnailRescueGuardAction guardAction = GetMissingThumbnailRescueGuardAction(
                 mode == CheckMode.Watch,
                 snapshotDbFullPath,

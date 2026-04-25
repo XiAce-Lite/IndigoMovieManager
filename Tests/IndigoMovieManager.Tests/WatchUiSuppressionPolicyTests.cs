@@ -135,6 +135,19 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void IsManualReloadDeferredScanTrigger_Header再読込deferredだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.IsManualReloadDeferredScanTrigger("Header.ReloadButton:deferred"),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.IsManualReloadDeferredScanTrigger("Header.ReloadButton"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void MergeWatchDeferredPathsForUiSuppression_未flush分と残件を重複排除して返す()
     {
         List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
@@ -285,6 +298,26 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void ManualReloadUiSuppression_手動再読み込み中だけ専用フラグが立つ()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "left-drawer");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "manual-reload");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.True);
+
+        InvokeVoid(window, "EndWatchUiSuppression", "manual-reload");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "EndWatchUiSuppression", "left-drawer");
+    }
+
+    [Test]
     public void EndUserPriorityWork_watch延期はsuppressionなしでもcatch_upをQueueする()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();
@@ -417,6 +450,16 @@ public sealed class WatchUiSuppressionPolicyTests
         )!;
         Assert.That(method, Is.Not.Null, methodName);
         method.Invoke(window, args);
+    }
+
+    private static bool InvokeBool(MainWindow window, string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        return (bool)method.Invoke(window, args)!;
     }
 
     private static void SetPrivateField(MainWindow window, string fieldName, object value)

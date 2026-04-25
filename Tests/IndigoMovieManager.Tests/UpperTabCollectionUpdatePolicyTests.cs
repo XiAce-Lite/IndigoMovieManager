@@ -49,4 +49,44 @@ public sealed class UpperTabCollectionUpdatePolicyTests
 
         Assert.That(shouldRefresh, Is.True);
     }
+
+    [Test]
+    public void プレーヤータブのDiff更新はRefresh不要()
+    {
+        bool shouldRefresh = UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+            tabIndex: 7,
+            updateMode: FilteredMovieRecsUpdateMode.Diff
+        );
+
+        Assert.That(shouldRefresh, Is.False);
+    }
+
+    [Test]
+    public void プレーヤータブのMove更新はRefresh不要()
+    {
+        bool shouldRefresh = UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+            tabIndex: 7,
+            updateMode: FilteredMovieRecsUpdateMode.Move
+        );
+
+        Assert.That(shouldRefresh, Is.False);
+    }
+
+    [Test]
+    public void プレーヤータブのFilter更新はDiffを選ぶ()
+    {
+        FilteredMovieRecsUpdateMode updateMode =
+            UpperTabCollectionUpdatePolicy.ResolveUpdateMode(tabIndex: 7, isSortOnly: false);
+
+        Assert.That(updateMode, Is.EqualTo(FilteredMovieRecsUpdateMode.Diff));
+    }
+
+    [Test]
+    public void プレーヤータブのSort更新はMoveを選ぶ()
+    {
+        FilteredMovieRecsUpdateMode updateMode =
+            UpperTabCollectionUpdatePolicy.ResolveUpdateMode(tabIndex: 7, isSortOnly: true);
+
+        Assert.That(updateMode, Is.EqualTo(FilteredMovieRecsUpdateMode.Move));
+    }
 }

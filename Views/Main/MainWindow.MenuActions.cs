@@ -1656,12 +1656,39 @@ namespace IndigoMovieManager
                     await FilterAndSortAsync(sortId, true);
                 }
 
-                // 拡張子追加直後でも、この再読込から監視フォルダ全体を拾い直せるようにする。
-                await QueueCheckFolderAsync(CheckMode.Manual, trigger);
+                // 再読込完了を先に返し、重い全域scanはUIが一息ついてから背後へ回す。
+                ScheduleDeferredManualReloadScan(trigger);
             }
             finally
             {
                 EndWatchUiSuppression("manual-reload");
+            }
+        }
+
+        // Header再読込の直後だけは一覧更新の体感を優先し、全域scanは1拍後ろへ逃がす。
+        private void ScheduleDeferredManualReloadScan(string trigger)
+        {
+            _ = RunDeferredManualReloadScanAsync(trigger);
+        }
+
+        private async Task RunDeferredManualReloadScanAsync(string trigger)
+        {
+            try
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"manual reload deferred scan scheduled: trigger={trigger}"
+                );
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                await Task.Delay(250);
+                await QueueCheckFolderAsync(CheckMode.Manual, $"{trigger}:deferred");
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"manual reload deferred scan failed: trigger={trigger} reason='{ex.Message}'"
+                );
             }
         }
 

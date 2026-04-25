@@ -1,8 +1,12 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-23
+最終更新日: 2026-04-24
 
 変更概要:
+- 全体計画を再構築し、優先軸を `UIスレッドを空ける`、`全面再評価を減らす`、`入力優先を守る` の 3 本へ整理した
+- `Watcher.cs` 薄化は目的ではなく、UI thread / queue / shutdown の詰まりを減らすための手段として位置づけ直した
+- 本線の次手を `watcher shutdown / queue 境界の安定化`、`diff-first UI の残り潰し`、`起動 warm path`、`visible-first / Player表示` の順へ組み替えた
+- `skin` は本線とは別チームの継続レーンとし、runtime bridge の terminal / changeSkin 境界固定と refresh / catalog / DB 分離を混ぜずに進める方針へ整理した
 - 全体計画を `rescue` 主導から `Watcher / UI差分反映` 主導へ再構成した
 - 本線の最上位テーマを `Watcher.cs` の薄化、watch change set、diff-first UI へ置き直した
 - `rescue` は新規主戦場ではなく、通常動画テンポを壊さないための維持・棚卸しレーンへ再定義した
@@ -67,12 +71,39 @@
 
 | 優先 | テーマ | 目的 | 状態 |
 |---|---|---|---|
-| P0 | サムネイル生成入口整理の維持 | `Factory + Interface + Args` の本流を崩さず後続改修を載せる | 完了済み、維持フェーズ |
-| P1 | `Watcher / UI差分反映` 本流 | `Watcher.cs` を orchestration へ縮め、watch を `event -> change set -> diff apply` の一本線へ寄せる | 進行中 |
-| P2 | 起動 warm path 短縮 | first-page 表示後へ仕事を逃がし、入力可能までの待ちをさらに減らす | 進行中 |
-| P3 | visible-first 画像供給 | 可視範囲と無関係な decode / file stamp / metadata miss をさらに減らす | 着手前 |
-| P4 | `skin` 表示・保存完全分離 | `refresh / stale / catalog / DB` を分離し、切り替え体感をもう一段細くする | 進行中 |
-| P5 | rescue / repair 維持と棚卸し | 通常動画テンポを壊さず、救済系の条件と観測を維持・整理する | 維持フェーズ |
+| P0 | 既存差分と安定性の保全 | 未コミット作業を混ぜず、テスト / shutdown / queue 境界を崩さない | 常時 |
+| P1 | UIスレッド簡素化と入力優先 | watch / DB / thumbnail / skin / poll が入力や描画を塞がない状態へ寄せる | 進行中 |
+| P2 | diff-first 一覧更新 | watch / rename / search / reload を全面再評価ではなく差分反映優先へ寄せる | 進行中 |
+| P3 | 起動 warm path 短縮 | first-page 後へ常駐処理を逃がし、操作可能までの待ちをさらに減らす | 進行中 |
+| P4 | visible-first / Player / 画像供給 | 可視範囲と再生 UI を優先し、off-screen decode / metadata / bind を後ろへ送る | 進行中 |
+| P5 | `skin` 表示・保存完全分離 | runtime bridge 境界固定と `refresh / catalog / DB` 分離を別レーンで進める | 進行中 |
+| P6 | rescue / repair 維持と棚卸し | 通常動画テンポを壊さず、救済系の条件と観測を維持・整理する | 維持フェーズ |
+
+### 3.1 2026-04-24 再構築後の実行順
+
+当面は「大きく速くする」よりも、UI スレッドへ戻ってくる仕事を減らし、既に入れた差分反映を安定して効かせる順で進める。
+
+1. **P0: 現在の作業差分を守る**
+   - 未コミット差分がある場合は、対象外ファイルを混ぜない
+   - `layout*.xml` や実機操作で動くファイルは、目的が一致する時だけ扱う
+   - コミットは 1 目的に絞る
+2. **P1: UI スレッドの待ちを削る**
+   - watcher event / check queue / Everything poll / skin DB write / thumbnail progress を、入力と描画から切り離す
+   - ただし fire-and-forget を増やすのではなく、bounded drain とログを持つ queue に寄せる
+   - shutdown では「入力停止 -> queue complete -> bounded drain -> timeout 時だけ諦める」を基本にする
+3. **P2: 全面再評価を減らす**
+   - `changed paths + ChangeKind + DirtyFields + ObservedState` を UI 反映まで保つ
+   - full reload は DB 切替、大量変更、query / sort 変更、特殊検索など必要条件へ限定する
+   - `Hash` や重複検索など、局所反映が危険な条件は安全側へ明示的に戻す
+4. **P3: 見えているものを先に出す**
+   - 起動 first-page、Player / UpperTabs、visible thumbnail を優先する
+   - off-screen の decode、metadata、補助 UI bind は後ろへ送る
+5. **P5: skin は別チームとして進める**
+   - runtime bridge / terminal / `changeSkin` 境界の固定
+   - `refresh` / stale / catalog / DB write の分離
+   - 本線の UI thread 施策と衝突しない範囲で進める
+
+この順番により、`Watcher.cs` のさらなる薄化は「読みにくいから切る」ではなく、UI thread / queue / shutdown の詰まりを減らす時だけ進める。
 
 ## 4. いま固定する判断基準
 
@@ -237,17 +268,18 @@
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
 - `UiHangNotificationCoordinator` と `NativeOverlayHost` の停止経路を確認し、オーバーレイ残留は「owner なし native popup を別スレッド dispatcher 依存で止めていること」が主因候補と整理した。直し方は `owner 付与 -> caller 側即 hide -> join timeout 後の強制閉鎖 -> shutdown 専用 safety fuse` の順に固定する
 
-### 7.2 Phase 4 の次の着手順
+### 7.2 再構築後の次の着手順
 
-1. `CheckFolderAsync` にまだ残る小粒のローカル関数、runtime context 生成後の引数受け渡し、`final dispatch` 手前の局所分岐を、テンポを落とさない範囲でさらに外へ出す
-2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
-3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
-  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる
-4. 検索高速化は一旦本線リポ外で検証する。`SearchSidecar` は別リポで継続し、本線では既存 `SearchService.FilterMovies(...)` 正本を維持する
-  ただし本線内での hot path 軽量化として、既存 `SearchService` の検索投影 cache 化は継続してよい
-5. `UiHang` オーバーレイ残留は、`NativeOverlayHost` に owner を持たせ、終了時は caller 側から即 hide を保証し、overlay thread join timeout 後は強制閉鎖まで行う。常時の無通信 timer は採らず、最後に shutdown 専用 safety fuse だけを評価する
+1. まず未コミット差分を確認し、対象外の Player / UpperTabs / layout 変更を混ぜずに作業単位を切る
+2. UI スレッドを塞ぐ入口を、`search / reload / Player / watcher / thumbnail / skin` の順に棚卸しし、snapshot / queue / defer / background 化のどれで解くか決める
+3. watcher / poll / shutdown は、`FileSystemWatcher` 入力停止、queue complete、created pipeline drain、Everything poll 停止の順序を固定し、bounded drain と timeout log を持たせる
+4. watch 起点の UI 再読込は、差分反映優先でさらに縮小できる箇所を切り分ける
+  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は full reload へ戻る理由を明示し、`Hash` や重複検索のような危険条件だけを安全側へ戻す
+5. visible-first / Player / 画像供給は、起動 first-page とユーザー操作を優先し、off-screen decode / metadata / 補助 UI bind を後ろへ送る
+6. 検索高速化は本線内では既存 `SearchService.FilterMovies(...)` 正本を維持し、投影 cache や比較コスト削減のような仕様を変えない範囲に留める。`SearchSidecar` は別リポ検証を継続する
+7. `skin` は別レーンとして、runtime bridge の terminal / `changeSkin` 境界固定と `refresh / catalog / DB` 分離を混ぜずに進める
 
-### 7.2.1 Phase 4 の抜本方針
+### 7.2.1 再構築後の抜本方針
 
 ### 7.2.2 検証用 worktree / 退避コピーの再発防止
 

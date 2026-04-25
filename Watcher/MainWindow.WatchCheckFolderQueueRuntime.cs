@@ -11,6 +11,8 @@ namespace IndigoMovieManager
         private readonly object _checkFolderRequestSync = new();
         private bool _hasPendingCheckFolderRequest;
         private CheckMode _pendingCheckFolderMode = CheckMode.Auto;
+        private bool _hasPendingManualReloadDeferredRescueSuppression;
+        private bool _isRunningManualReloadDeferredRescueSuppression;
 
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
@@ -32,6 +34,7 @@ namespace IndigoMovieManager
             }
 
             QueueCheckFolderAsyncRequestedForTesting?.Invoke(mode.ToString(), trigger);
+            RegisterManualReloadDeferredRescueSuppressionIfNeeded(mode, trigger);
             EnqueueCheckFolderRequest(mode);
 
             DebugRuntimeLog.Write(
@@ -112,7 +115,16 @@ namespace IndigoMovieManager
             {
                 while (TryDequeuePendingCheckFolderMode(out CheckMode modeToRun))
                 {
-                    await CheckFolderAsync(modeToRun);
+                    bool suppressMissingThumbnailRescue =
+                        TryBeginManualReloadDeferredRescueSuppression(modeToRun);
+                    try
+                    {
+                        await CheckFolderAsync(modeToRun);
+                    }
+                    finally
+                    {
+                        EndManualReloadDeferredRescueSuppression(suppressMissingThumbnailRescue);
+                    }
                 }
             }
             finally
@@ -141,6 +153,81 @@ namespace IndigoMovieManager
                 mode = _pendingCheckFolderMode;
                 _hasPendingCheckFolderRequest = false;
                 return true;
+            }
+        }
+
+        // Header再読込の deferred manual scan だけは、同じ run の欠損救済を最後まで止める。
+        private void RegisterManualReloadDeferredRescueSuppressionIfNeeded(
+            CheckMode mode,
+            string trigger
+        )
+        {
+            if (mode != CheckMode.Manual || !IsManualReloadDeferredScanTrigger(trigger))
+            {
+                return;
+            }
+
+            lock (_checkFolderRequestSync)
+            {
+                _hasPendingManualReloadDeferredRescueSuppression = true;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"manual reload deferred rescue suppression registered: trigger={trigger}"
+            );
+        }
+
+        // dequeue された Manual run が deferred reload 起点なら、その1回だけ抑止を有効にする。
+        private bool TryBeginManualReloadDeferredRescueSuppression(CheckMode mode)
+        {
+            if (mode != CheckMode.Manual)
+            {
+                return false;
+            }
+
+            lock (_checkFolderRequestSync)
+            {
+                if (!_hasPendingManualReloadDeferredRescueSuppression)
+                {
+                    return false;
+                }
+
+                _hasPendingManualReloadDeferredRescueSuppression = false;
+                _isRunningManualReloadDeferredRescueSuppression = true;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                "manual reload deferred rescue suppression begin"
+            );
+            return true;
+        }
+
+        // deferred reload 起点の Manual run 終了で抑止も閉じ、他経路へ漏らさない。
+        private void EndManualReloadDeferredRescueSuppression(bool wasActive)
+        {
+            if (!wasActive)
+            {
+                return;
+            }
+
+            lock (_checkFolderRequestSync)
+            {
+                _isRunningManualReloadDeferredRescueSuppression = false;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                "manual reload deferred rescue suppression end"
+            );
+        }
+
+        private bool IsManualReloadDeferredRescueSuppressionActive()
+        {
+            lock (_checkFolderRequestSync)
+            {
+                return _isRunningManualReloadDeferredRescueSuppression;
             }
         }
     }

@@ -29,6 +29,16 @@ public partial class MainWindow
         return string.Equals(reason, "manual-reload", StringComparison.OrdinalIgnoreCase);
     }
 
+    // Header再読込の遅延scanだけを見分け、救済抑止の適用範囲を最小に保つ。
+    internal static bool IsManualReloadDeferredScanTrigger(string trigger)
+    {
+        return string.Equals(
+            trigger,
+            "Header.ReloadButton:deferred",
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
     // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
     internal static List<string> MergeWatchDeferredPathsForUiSuppression(
         IReadOnlyList<string> remainingScanPaths,

@@ -14,16 +14,20 @@
   - 未固定: どちらか片側だけ green、または直列遷移で timeout / fail-fast が混ざる。
 - 2026-04-24 時点の読み順:
   - 両実 host で固定済み: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` と `changeSkin success / failure` の主要境界。
-    - `runtime bridge` 側は、`tag / thumb` の terminal rerender まで固定済み。
+    - `runtime bridge` 側は、`tag / thumb` の terminal rerender と `MissingSkin -> success` 直列まで固定済み。
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
   - runtime bridge 側が未固定: bare の `TagInputRelation` における `onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve`。build 出力 skin 4 本の `tag / thumb` 直列は、2026-04-24 に host 側追跡へ寄せた focused 16 件で green へ更新した。
+- 2026-04-24 計画練り直し:
+  - 最優先は MainWindow 実 host の teardown / fail-fast 共通原因。
+  - 次点は bare `TagInputRelation` の runtime bridge 直列を host 側追跡で再観測すること。
+  - build 出力 skin 4 本は runtime bridge 正本を軸にし、MainWindow 側は teardown 安定後に代表ケースだけ受け入れ判断する。
 - 2026-04-23 追記: `da6a22b` の compat alias fallback 固定と `0a9fd64` の lifecycle pending 応答補強に加え、`22cf0bd` のテストハーネス側安定化で `TagInputRelation Get後 -> terminal -> MissingSkin -> #umlFindTreeEve` が focused 2 件 green になった。
 - 2026-04-24 追記: `TagInputRelation Save後 -> onSkinLeave/onClearAll -> MissingSkin -> #umlFindTreeEve` も focused 2 件 green になり、runtime bridge の `Save後` 直列は未固定一覧から外した。
 - 2026-04-24 追記: `umiFindTreeEve onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` も focused 2 件 green になり、runtime bridge の `umiFindTreeEve` 直列は未固定一覧から外した。
 - 2026-04-24 追記: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の runtime bridge 実 host における `onUpdateThum / onModifyTags -> onSkinLeave/onClearAll -> MissingSkin -> changeSkin(nextSkin)` も、host 側 `messageId / request / resolve` 追跡へ寄せた focused 16 件で green になった。途中で見えていた timeout は、同一 async 連結のページ内観測 state が 2 回目 navigate で消えていた test harness 側の観測問題だった。
 - 2026-04-23 追記: `7fd9312` で close/shutdown 中の refresh / overlay dispatcher 競合を抑止し、`close開始後に遅延prepareが完了してもteardown競合で落ちない` を focused green に更新した。MainWindow 側の未固定領域は「close 競合全般」ではなく、一部 exact シナリオの fail-fast 残差として読む。
 - 詳細の正本:
-  - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-23 時点の固定状況インデックス」を正本として扱う。
+  - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-24 時点の固定状況インデックス」を正本として扱う。
   - 本メモでは、上記インデックスの裏取りログを `更新メモ` で追える状態を維持する。
 
 ## 今回の実装反映 (2026-04-10 / 2026-04-11)

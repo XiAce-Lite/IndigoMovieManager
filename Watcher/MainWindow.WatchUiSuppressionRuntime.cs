@@ -9,6 +9,7 @@ namespace IndigoMovieManager
         // 左ドロワー表示中は、watch 起点の新規仕事だけ抑えて操作テンポを守る。
         private readonly object _watchUiSuppressionSync = new();
         private int _watchUiSuppressionCount;
+        private int _manualReloadUiSuppressionCount;
         private bool _watchWorkDeferredWhileSuppressed;
 
         // watch 開始直後の抑止判定を 1 か所へまとめ、Watcher 側の入口分岐を薄くする。
@@ -83,15 +84,42 @@ namespace IndigoMovieManager
             }
         }
 
+        // manual reload 由来の抑止だけを見分け、重い欠損救済をこの間だけ後ろへ逃がす。
+        private bool IsManualReloadUiSuppressionActive()
+        {
+            lock (_watchUiSuppressionSync)
+            {
+                return _manualReloadUiSuppressionCount > 0;
+            }
+        }
+
+        private static bool IsManualReloadWatchUiSuppressionReason(string reason)
+        {
+            return string.Equals(reason, "manual-reload", StringComparison.OrdinalIgnoreCase);
+        }
+
         // 左ドロワーを開いた間は、新規の watch 仕事を入口で抑える。
         private void BeginWatchUiSuppression(string reason)
         {
             bool activated = false;
             bool hadPendingDeferredUiReload = false;
+            bool shouldInvalidateWatchScanScope = false;
             lock (_watchUiSuppressionSync)
             {
                 _watchUiSuppressionCount++;
+                if (IsManualReloadWatchUiSuppressionReason(reason))
+                {
+                    _manualReloadUiSuppressionCount++;
+                    shouldInvalidateWatchScanScope = true;
+                }
+
                 activated = _watchUiSuppressionCount == 1;
+            }
+
+            // 手動再読み込みへ切り替わった時点で旧Auto/Watch走査を stale 化し、居残りを早めに畳む。
+            if (shouldInvalidateWatchScanScope)
+            {
+                InvalidateWatchScanScope($"ui-suppression:{reason}");
             }
 
             if (activated)
@@ -131,6 +159,14 @@ namespace IndigoMovieManager
                 if (_watchUiSuppressionCount > 0)
                 {
                     _watchUiSuppressionCount--;
+                }
+
+                if (
+                    IsManualReloadWatchUiSuppressionReason(reason)
+                    && _manualReloadUiSuppressionCount > 0
+                )
+                {
+                    _manualReloadUiSuppressionCount--;
                 }
 
                 isStillSuppressed = _watchUiSuppressionCount > 0;

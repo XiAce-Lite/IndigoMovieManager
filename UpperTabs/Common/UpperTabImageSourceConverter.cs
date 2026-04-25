@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 using IndigoMovieManager.Converter;
 
@@ -19,12 +20,14 @@ namespace IndigoMovieManager.UpperTabs.Common
         {
             if (values == null || values.Length < 3)
             {
-                return Binding.DoNothing;
+                return DependencyProperty.UnsetValue;
             }
 
-            if (!UpperTabActivationGate.ShouldApplyImageUpdate(values[2]))
+            object moviePathValue = values.Length > 3 ? values[3] : null;
+            if (!UpperTabActivationGate.ShouldApplyImageUpdate(values[2], moviePathValue))
             {
-                return Binding.DoNothing;
+                // Recycling されたコンテナへ前の画像が残らないよう、非対象時は明示的に空へ戻す。
+                return DependencyProperty.UnsetValue;
             }
 
             bool isExists = values[1] is not bool exists || exists;

@@ -468,10 +468,7 @@
                                     >
                                       <Binding Path="ThumbPathSmall" />
                                       <Binding Path="IsExists" />
-                                      <Binding
-                                        Path="IsSelected"
-                                        RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                      />
+                                      <Binding Source="{x:Reference SmallList}" Path="IsVisible" />
                                     </MultiBinding>
                                   </Image.Source>
                                 </Image>
@@ -590,10 +587,7 @@
                                     >
                                       <Binding Path="ThumbPathBig" />
                                       <Binding Path="IsExists" />
-                                      <Binding
-                                        Path="IsSelected"
-                                        RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                      />
+                                      <Binding Source="{x:Reference BigList}" Path="IsVisible" />
                                     </MultiBinding>
                                   </Image.Source>
                                 </Image>
@@ -665,10 +659,7 @@
                                   >
                                     <Binding Path="ThumbPathGrid" />
                                     <Binding Path="IsExists" />
-                                    <Binding
-                                      Path="IsSelected"
-                                      RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                    />
+                                    <Binding Source="{x:Reference GridList}" Path="IsVisible" />
                                   </MultiBinding>
                                 </Image.Source>
                               </Image>
@@ -930,18 +921,44 @@
                       >
                         <DockPanel LastChildFill="True">
                           <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                            <TextBlock
-                              FontSize="14"
-                              FontWeight="SemiBold"
-                              Foreground="{DynamicResource MaterialDesignBody}"
-                              Text="Grid サムネ 1列"
-                            />
+                            <DockPanel LastChildFill="False">
+                              <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Foreground="{DynamicResource MaterialDesignBody}"
+                                Text="Grid サムネ"
+                              />
+                              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ToggleButton
+                                  x:Name="PlayerThumbnailSingleColumnButton"
+                                  Width="32"
+                                  Height="28"
+                                  Margin="18,0,0,0"
+                                  Click="PlayerThumbnailSingleColumnButton_Click"
+                                  IsChecked="True"
+                                  ToolTip="1列表示"
+                                >
+                                  <materialDesign:PackIcon Kind="ViewAgendaOutline" />
+                                </ToggleButton>
+                                <ToggleButton
+                                  x:Name="PlayerThumbnailCompactGridButton"
+                                  Width="32"
+                                  Height="28"
+                                  Margin="18,0,0,0"
+                                  Click="PlayerThumbnailCompactGridButton_Click"
+                                  ToolTip="3列表示"
+                                >
+                                  <materialDesign:PackIcon Kind="ViewGridOutline" />
+                                </ToggleButton>
+                              </StackPanel>
+                            </DockPanel>
                             <TextBlock
                               Margin="0,4,0,0"
                               FontSize="12"
                               Foreground="{DynamicResource MaterialDesignBody}"
                               Opacity="0.78"
-                              Text="選択した動画を左のプレイヤーで開きます"
+                              Text="1列詳細と3列小サムネを切り替えできます"
                               TextWrapping="Wrap"
                             />
                           </StackPanel>
@@ -993,10 +1010,8 @@
                                           >
                                             <Binding Path="ThumbPathGrid" />
                                             <Binding Path="IsExists" />
-                                            <Binding
-                                              Path="IsSelected"
-                                              RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                            />
+                                            <Binding Source="{x:Reference PlayerThumbnailList}" Path="IsVisible" />
+                                            <Binding Path="Movie_Path" />
                                           </MultiBinding>
                                         </Image.Source>
                                       </Image>
@@ -1015,6 +1030,126 @@
                                       Foreground="{DynamicResource MaterialDesignBody}"
                                       Opacity="0.78"
                                       Text="{Binding Movie_Length, UpdateSourceTrigger=PropertyChanged}"
+                                    />
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate>
+                            </ListView.ItemTemplate>
+                          </ListView>
+                          <ListView
+                            x:Name="PlayerThumbnailCompactList"
+                            Width="252"
+                            HorizontalAlignment="Left"
+                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                            ScrollViewer.CanContentScroll="True"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                            SelectionChanged="PlayerThumbnailList_SelectionChanged"
+                            SelectionMode="Extended"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.ScrollUnit="Pixel"
+                            VirtualizingPanel.VirtualizationMode="Recycling"
+                            Visibility="Collapsed"
+                          >
+                            <ListView.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <vwp:VirtualizingWrapPanel
+                                  Orientation="Horizontal"
+                                  SpacingMode="None"
+                                  StretchItems="False"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.ScrollUnit="Pixel"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                />
+                              </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+
+                            <ListView.ItemContainerStyle>
+                              <Style TargetType="ListViewItem">
+                                <!--  3列表示は固定幅にして、スクロール中の再計算を最小化する。  -->
+                                <Setter Property="Width" Value="74" />
+                                <Setter Property="Margin" Value="0,0,4,8" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                <Setter Property="VerticalContentAlignment" Value="Top" />
+                                <Setter Property="Template">
+                                  <Setter.Value>
+                                    <ControlTemplate TargetType="ListViewItem">
+                                      <Border
+                                        x:Name="ItemChrome"
+                                        Padding="{TemplateBinding Padding}"
+                                        Background="Transparent"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="1"
+                                        SnapsToDevicePixels="True"
+                                      >
+                                        <ContentPresenter
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                        />
+                                      </Border>
+                                      <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                          <Setter TargetName="ItemChrome" Property="Background" Value="#123A6E8A" />
+                                          <Setter TargetName="ItemChrome" Property="BorderBrush" Value="#803A9AD9" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                          <Setter TargetName="ItemChrome" Property="Background" Value="#203A6E8A" />
+                                          <Setter TargetName="ItemChrome" Property="BorderBrush" Value="#FF3A9AD9" />
+                                        </Trigger>
+                                      </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                  </Setter.Value>
+                                </Setter>
+                              </Style>
+                            </ListView.ItemContainerStyle>
+
+                            <ListView.ItemTemplate>
+                              <DataTemplate>
+                                <Border
+                                  Width="70"
+                                  Padding="3"
+                                  Background="{DynamicResource MaterialDesignCardBackground}"
+                                  BorderBrush="{DynamicResource MaterialDesignDivider}"
+                                  BorderThickness="1"
+                                  CornerRadius="4"
+                                  SnapsToDevicePixels="True"
+                                >
+                                  <StackPanel>
+                                    <Label
+                                      Width="62"
+                                      HorizontalAlignment="Stretch"
+                                      Height="42"
+                                      Padding="0"
+                                      BorderThickness="0"
+                                      Background="{DynamicResource ThumbImageBackground}"
+                                      ContextMenu="{StaticResource menuContext}"
+                                      MouseDown="Label_MouseDown"
+                                    >
+                                      <Image SnapsToDevicePixels="True" Stretch="UniformToFill">
+                                        <Image.Source>
+                                          <MultiBinding
+                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.GridDecodePixelHeight}"
+                                          >
+                                            <Binding Path="ThumbPathGrid" />
+                                            <Binding Path="IsExists" />
+                                            <Binding Source="{x:Reference PlayerThumbnailCompactList}" Path="IsVisible" />
+                                          </MultiBinding>
+                                        </Image.Source>
+                                      </Image>
+                                    </Label>
+                                    <TextBlock
+                                      Margin="0,4,0,0"
+                                      FontSize="10"
+                                      Foreground="{DynamicResource MaterialDesignBody}"
+                                      Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
+                                      TextAlignment="Center"
+                                      TextTrimming="CharacterEllipsis"
                                     />
                                   </StackPanel>
                                 </Border>
@@ -1076,10 +1211,7 @@
                                     >
                                       <Binding Path="ThumbPathList" />
                                       <Binding Path="IsExists" />
-                                      <Binding
-                                        Path="IsSelected"
-                                        RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                      />
+                                      <Binding Source="{x:Reference ListDataGrid}" Path="IsVisible" />
                                     </MultiBinding>
                                   </Image.Source>
                                 </Image>
@@ -1404,10 +1536,7 @@
                                     >
                                       <Binding Path="ThumbPathBig10" />
                                       <Binding Path="IsExists" />
-                                      <Binding
-                                        Path="IsSelected"
-                                        RelativeSource="{RelativeSource AncestorType=TabItem}"
-                                      />
+                                      <Binding Source="{x:Reference BigList10}" Path="IsVisible" />
                                     </MultiBinding>
                                   </Image.Source>
                                 </Image>

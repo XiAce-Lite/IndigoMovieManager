@@ -226,7 +226,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => SmallList,
                 UpperTabBigFixedIndex => BigList,
                 UpperTabGridFixedIndex => GridList,
-                PlayerTabIndex => PlayerThumbnailList,
+                PlayerTabIndex => GetUpperTabPlayerList(),
                 UpperTabListFixedIndex => ListDataGrid,
                 UpperTabBig10FixedIndex => BigList10,
                 ThumbnailErrorTabIndex => GetUpperTabRescueDataGrid(),

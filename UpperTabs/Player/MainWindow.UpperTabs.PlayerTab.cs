@@ -14,8 +14,18 @@ namespace IndigoMovieManager
     {
         private const int PlayerTabIndex = 7;
         private const double PlayerTabBottomLayoutWidthThreshold = 1260d;
+        private static readonly HashSet<string> WebViewPreferredPlayerExtensions = new(
+            System.StringComparer.OrdinalIgnoreCase
+        )
+        {
+            ".mp4",
+            ".webm",
+            ".m4v",
+            ".ogv",
+        };
         private bool _suppressPlayerThumbnailSelectionChanged;
         private bool _suppressPlayerTabActivationAutoOpen;
+        private bool _isPlayerThumbnailCompactViewEnabled;
         private bool _hasPendingPlayerPlaybackRequest;
         private int _pendingPlayerStartMilliseconds;
         private bool _pendingPlayerPlayImmediately;
@@ -35,7 +45,22 @@ namespace IndigoMovieManager
 
         private ListView GetUpperTabPlayerList()
         {
-            return PlayerThumbnailList;
+            return _isPlayerThumbnailCompactViewEnabled
+                ? PlayerThumbnailCompactList
+                : PlayerThumbnailList;
+        }
+
+        private IEnumerable<ListView> GetAllUpperTabPlayerLists()
+        {
+            if (PlayerThumbnailList != null)
+            {
+                yield return PlayerThumbnailList;
+            }
+
+            if (PlayerThumbnailCompactList != null)
+            {
+                yield return PlayerThumbnailCompactList;
+            }
         }
 
         private void SelectFirstUpperTabPlayerItemIfAvailable()
@@ -78,13 +103,17 @@ namespace IndigoMovieManager
 
         private void SelectUpperTabPlayerMovieRecord(MovieRecords record)
         {
-            if (record == null || GetUpperTabPlayerList() == null)
+            if (record == null)
             {
                 return;
             }
 
-            GetUpperTabPlayerList().SelectedItem = record;
-            GetUpperTabPlayerList().ScrollIntoView(record);
+            foreach (ListView list in GetAllUpperTabPlayerLists())
+            {
+                list.SelectedItem = record;
+            }
+
+            GetUpperTabPlayerList()?.ScrollIntoView(record);
         }
 
         // プレイヤータブへ飛ばす時だけ、選択イベントの自動再生を一時停止して狙った動画へ揃える。
@@ -104,6 +133,8 @@ namespace IndigoMovieManager
             {
                 _suppressPlayerThumbnailSelectionChanged = false;
             }
+
+            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
         }
 
         // プレイヤータブ選択時は先頭選択を揃えたうえで、左ペインへ再生内容を同期する。
@@ -165,6 +196,8 @@ namespace IndigoMovieManager
                 return;
             }
 
+            SyncPlayerThumbnailSelectionAcrossViews(sender as ListView, selectedMovie);
+
             await OpenMovieInPlayerTabAsync(
                 selectedMovie,
                 0,
@@ -178,6 +211,16 @@ namespace IndigoMovieManager
         {
             UpdatePlayerTabLayoutMode();
             UpdateManualPlayerViewport();
+        }
+
+        private void PlayerThumbnailSingleColumnButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetPlayerThumbnailCompactViewMode(false);
+        }
+
+        private void PlayerThumbnailCompactGridButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetPlayerThumbnailCompactViewMode(true);
         }
 
         // プレイヤータブ上では一覧選択と再生面を同じ動画へ揃え、手動サムネ導線もここへ寄せる。
@@ -223,7 +266,7 @@ namespace IndigoMovieManager
 
             // プレイヤータブの通常再生は WebView2 を正面採用し、
             // 手動サムネ位置合わせだけ従来の MediaElement を残す。
-            if (ShouldUseWebViewPlayerForPlayerTab(focusTimeSlider))
+            if (ShouldUseWebViewPlayerForPlayerTab(movie.Movie_Path, focusTimeSlider))
             {
                 await OpenMovieInWebViewPlayerAsync(
                     movie,
@@ -526,6 +569,92 @@ namespace IndigoMovieManager
             PlayerTabBottomRow.Height = new GridLength(0d);
         }
 
+        // 右側一覧は 1列詳細と 3列小サムネを切り替え、選択中の動画だけは必ず持ち歩く。
+        private void SetPlayerThumbnailCompactViewMode(bool enabled)
+        {
+            _isPlayerThumbnailCompactViewEnabled = enabled;
+
+            if (PlayerThumbnailList != null)
+            {
+                PlayerThumbnailList.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            if (PlayerThumbnailCompactList != null)
+            {
+                PlayerThumbnailCompactList.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (PlayerThumbnailSingleColumnButton != null)
+            {
+                PlayerThumbnailSingleColumnButton.IsChecked = !enabled;
+            }
+
+            if (PlayerThumbnailCompactGridButton != null)
+            {
+                PlayerThumbnailCompactGridButton.IsChecked = enabled;
+            }
+
+            MovieRecords selectedMovie = GetSelectedUpperTabPlayerMovieRecord();
+            if (selectedMovie == null)
+            {
+                selectedMovie = PlayerThumbnailList?.SelectedItem as MovieRecords
+                    ?? PlayerThumbnailCompactList?.SelectedItem as MovieRecords;
+            }
+
+            if (selectedMovie == null)
+            {
+                SelectFirstUpperTabPlayerItemIfAvailable();
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+                return;
+            }
+
+            _suppressPlayerThumbnailSelectionChanged = true;
+            try
+            {
+                foreach (ListView list in GetAllUpperTabPlayerLists())
+                {
+                    list.SelectedItem = selectedMovie;
+                }
+
+                GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);
+            }
+            finally
+            {
+                _suppressPlayerThumbnailSelectionChanged = false;
+            }
+
+            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+        }
+
+        private void SyncPlayerThumbnailSelectionAcrossViews(
+            ListView sourceList,
+            MovieRecords selectedMovie
+        )
+        {
+            if (selectedMovie == null)
+            {
+                return;
+            }
+
+            _suppressPlayerThumbnailSelectionChanged = true;
+            try
+            {
+                foreach (ListView list in GetAllUpperTabPlayerLists())
+                {
+                    if (ReferenceEquals(list, sourceList))
+                    {
+                        continue;
+                    }
+
+                    list.SelectedItem = selectedMovie;
+                }
+            }
+            finally
+            {
+                _suppressPlayerThumbnailSelectionChanged = false;
+            }
+        }
+
         // プレイヤータブは Grid サムネを借りるので、画像系の扱いだけ Grid 固定IDへ正規化する。
         private static int ResolvePlayerTabGridProxyTabIndex(int tabIndex)
         {
@@ -775,9 +904,18 @@ namespace IndigoMovieManager
             }
         }
 
-        private static bool ShouldUseWebViewPlayerForPlayerTab(bool focusTimeSlider)
+        private static bool ShouldUseWebViewPlayerForPlayerTab(
+            string moviePath,
+            bool focusTimeSlider
+        )
         {
-            return !focusTimeSlider;
+            if (focusTimeSlider)
+            {
+                return false;
+            }
+
+            string extension = Path.GetExtension(moviePath) ?? "";
+            return WebViewPreferredPlayerExtensions.Contains(extension);
         }
 
         // dotnet 起動時でも Program Files 側へ書こうとしないよう、プレーヤー専用の保存先を固定する。
@@ -868,6 +1006,7 @@ namespace IndigoMovieManager
             }
 
             uxWebVideoPlayer.CoreWebView2.WebMessageReceived += UxWebVideoPlayer_WebMessageReceived;
+            uxWebVideoPlayer.CoreWebView2.DownloadStarting += UxWebVideoPlayer_DownloadStarting;
             uxWebVideoPlayer.CoreWebView2.ContainsFullScreenElementChanged +=
                 UxWebVideoPlayer_ContainsFullScreenElementChanged;
             await uxWebVideoPlayer.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
@@ -916,6 +1055,21 @@ namespace IndigoMovieManager
                 """
             );
             _isWebViewPlayerBridgeRegistered = true;
+        }
+
+        // 非対応拡張子でダウンロードへ落ちても、その場で止めてプレイヤータブから外へ出さない。
+        private void UxWebVideoPlayer_DownloadStarting(
+            object sender,
+            CoreWebView2DownloadStartingEventArgs e
+        )
+        {
+            e.Cancel = true;
+
+            string downloadUri = e.DownloadOperation?.Uri ?? "";
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"player webview download canceled: uri='{downloadUri}'"
+            );
         }
 
         private async Task PauseWebViewPlayerAsync()

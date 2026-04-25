@@ -456,6 +456,32 @@ namespace IndigoMovieManager
             }
         }
 
+        // WebView2 は別 HWND として前面に出るため、左ドロワー操作中だけ描画面を退避する。
+        private void SetWebViewPlayerHiddenForLeftDrawer(bool hidden)
+        {
+            if (uxWebVideoPlayer == null || !_isWebViewPlayerActive)
+            {
+                return;
+            }
+
+            if (hidden)
+            {
+                if (uxWebVideoPlayer.Visibility == Visibility.Visible)
+                {
+                    uxWebVideoPlayer.Visibility = Visibility.Hidden;
+                    DebugRuntimeLog.Write("ui-tempo", "player webview hidden for left drawer");
+                }
+
+                return;
+            }
+
+            if (TabPlayer?.IsSelected == true && !_isDetachedPlayerFullscreenActive)
+            {
+                uxWebVideoPlayer.Visibility = Visibility.Visible;
+                DebugRuntimeLog.Write("ui-tempo", "player webview restored after left drawer");
+            }
+        }
+
         // タブを離れたら音だけ残さないよう一旦止め、戻った時は同じ動画を再開しやすくする。
         private void PausePlayerTabPlaybackForBackground()
         {

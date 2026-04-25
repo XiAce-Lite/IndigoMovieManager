@@ -466,11 +466,13 @@ namespace IndigoMovieManager
         private void MenuToggleButton_Checked(object sender, RoutedEventArgs e)
         {
             BeginWatchUiSuppression("left-drawer");
+            SetWebViewPlayerHiddenForLeftDrawer(hidden: true);
         }
 
         // 左ドロワーを閉じた時だけ、保留があれば watch を1回 catch-up させる。
         private void MenuToggleButton_Unchecked(object sender, RoutedEventArgs e)
         {
+            SetWebViewPlayerHiddenForLeftDrawer(hidden: false);
             EndWatchUiSuppression("left-drawer");
         }
 

@@ -29,6 +29,17 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(source, Does.Contain("UpdateManualPlayerViewport();"));
     }
 
+    [Test]
+    public void ApplyPlayerVolumeSetting_保存はdebounce経由で畳む()
+    {
+        string source = GetMainWindowPlayerSourceText();
+
+        Assert.That(source, Does.Contain("private DispatcherTimer _playerVolumeSaveDebounceTimer;"));
+        Assert.That(source, Does.Contain("private void QueuePlayerVolumeSettingSave()"));
+        Assert.That(source, Does.Contain("private void PlayerVolumeSaveDebounceTimer_Tick("));
+        Assert.That(source, Does.Contain("QueuePlayerVolumeSettingSave();"));
+    }
+
     private static string GetMainWindowPlayerSourceText()
     {
         DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);

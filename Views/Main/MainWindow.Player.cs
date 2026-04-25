@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using IndigoMovieManager.Thumbnail;
 using static IndigoMovieManager.DB.SQLite;
 
@@ -19,6 +20,7 @@ namespace IndigoMovieManager
         private bool _isTimeSliderDragging;
         private bool _isManualPlayerResizeTrackingHooked;
         private bool _isPlayerVolumeSyncingFromWebView;
+        private DispatcherTimer _playerVolumeSaveDebounceTimer;
 
         // 保存済み設定が壊れていても、音量は常に 0.0 から 1.0 の安全域へ戻す。
         private static double ClampPlayerVolumeSetting(double volume)
@@ -44,7 +46,7 @@ namespace IndigoMovieManager
             }
 
             Properties.Settings.Default.PlayerVolume = resolvedVolume;
-            Properties.Settings.Default.Save();
+            QueuePlayerVolumeSettingSave();
 
             if (!pushToWebView || uxWebVideoPlayer?.CoreWebView2 == null)
             {
@@ -54,6 +56,37 @@ namespace IndigoMovieManager
             _ = uxWebVideoPlayer.ExecuteScriptAsync(
                 $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; }}"
             );
+        }
+
+        // スライダー操作中の連続保存を畳み、UIスレッドの細かい詰まりを避ける。
+        private void QueuePlayerVolumeSettingSave()
+        {
+            if (_playerVolumeSaveDebounceTimer == null)
+            {
+                _playerVolumeSaveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(500),
+                };
+                _playerVolumeSaveDebounceTimer.Tick += PlayerVolumeSaveDebounceTimer_Tick;
+            }
+
+            StopDispatcherTimerSafely(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+            TryStartDispatcherTimer(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+        }
+
+        private void PlayerVolumeSaveDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            StopDispatcherTimerSafely(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+            Properties.Settings.Default.Save();
         }
 
         // WebView2 のネイティブ音量変更も設定へ戻し、以後の全動画へ同じ値を配る。

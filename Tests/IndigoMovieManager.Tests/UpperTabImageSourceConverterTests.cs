@@ -62,6 +62,28 @@ public sealed class UpperTabImageSourceConverterTests
     }
 
     [Test]
+    public void 可視近傍キー外の動画はconverterでもUnsetValueを返す()
+    {
+        UpperTabImageSourceConverter converter = new();
+        string visibleMoviePath = Path.Combine("movies", "visible.mp4");
+        string hiddenMoviePath = Path.Combine("movies", "hidden.mp4");
+
+        // gate 単体だけでなく converter 経路でも off-screen 抑止が効くことを固定する。
+        UpperTabActivationGate.UpdatePreferredMoviePathKeys(
+            [QueueDbPathResolver.CreateMoviePathKey(visibleMoviePath)]
+        );
+
+        object actual = converter.Convert(
+            [@"C:\thumb\hidden.jpg", true, true, hiddenMoviePath],
+            typeof(System.Windows.Media.ImageSource),
+            UpperTabDecodeProfile.SmallDecodePixelHeight,
+            CultureInfo.InvariantCulture
+        );
+
+        Assert.That(actual, Is.SameAs(DependencyProperty.UnsetValue));
+    }
+
+    [Test]
     [Apartment(ApartmentState.STA)]
     public void 選択中で画像が存在すればImageSourceを返す()
     {

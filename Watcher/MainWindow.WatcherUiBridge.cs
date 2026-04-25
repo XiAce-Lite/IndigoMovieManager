@@ -134,34 +134,37 @@ namespace IndigoMovieManager
                 ? (Path.GetFileNameWithoutExtension(moviePath) ?? "")
                 : fileBody;
 
-            _ = Dispatcher.InvokeAsync(() =>
-            {
-                PendingMoviePlaceholder item = MainVM.PendingMovieRecs
-                    .FirstOrDefault(x =>
-                        string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
-                    );
-
-                if (item == null)
+            _ = Dispatcher.InvokeAsync(
+                () =>
                 {
-                    item = new PendingMoviePlaceholder
+                    PendingMoviePlaceholder item = MainVM.PendingMovieRecs
+                        .FirstOrDefault(x =>
+                            string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
+                        );
+
+                    if (item == null)
                     {
-                        MoviePath = moviePath,
-                        DetectedAtLocal = DateTime.Now,
-                    };
-                    MainVM.PendingMovieRecs.Add(item);
-                }
+                        item = new PendingMoviePlaceholder
+                        {
+                            MoviePath = moviePath,
+                            DetectedAtLocal = DateTime.Now,
+                        };
+                        MainVM.PendingMovieRecs.Add(item);
+                    }
 
-                item.FileBody = safeFileBody;
-                item.TabIndex = tabIndex;
-                item.Status = status;
-                item.LastError = lastError ?? "";
-                item.UpdatedAtLocal = DateTime.Now;
+                    item.FileBody = safeFileBody;
+                    item.TabIndex = tabIndex;
+                    item.Status = status;
+                    item.LastError = lastError ?? "";
+                    item.UpdatedAtLocal = DateTime.Now;
 
-                while (MainVM.PendingMovieRecs.Count > PendingMovieUiKeepLimit)
-                {
-                    MainVM.PendingMovieRecs.RemoveAt(0);
-                }
-            });
+                    while (MainVM.PendingMovieRecs.Count > PendingMovieUiKeepLimit)
+                    {
+                        MainVM.PendingMovieRecs.RemoveAt(0);
+                    }
+                },
+                DispatcherPriority.Background
+            );
         }
 
         // DB反映が終わった動画は仮表示から取り除く。
@@ -172,17 +175,20 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _ = Dispatcher.InvokeAsync(() =>
-            {
-                PendingMoviePlaceholder item = MainVM.PendingMovieRecs
-                    .FirstOrDefault(x =>
-                        string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
-                    );
-                if (item != null)
+            _ = Dispatcher.InvokeAsync(
+                () =>
                 {
-                    MainVM.PendingMovieRecs.Remove(item);
-                }
-            });
+                    PendingMoviePlaceholder item = MainVM.PendingMovieRecs
+                        .FirstOrDefault(x =>
+                            string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
+                        );
+                    if (item != null)
+                    {
+                        MainVM.PendingMovieRecs.Remove(item);
+                    }
+                },
+                DispatcherPriority.Background
+            );
         }
 
         // 例外で走査が中断したフォルダ分の仮表示をクリアして残留を防ぐ。
@@ -193,19 +199,22 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _ = Dispatcher.InvokeAsync(() =>
-            {
-                List<PendingMoviePlaceholder> targets = MainVM.PendingMovieRecs
-                    .Where(x =>
-                        !string.IsNullOrWhiteSpace(x.MoviePath)
-                        && x.MoviePath.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)
-                    )
-                    .ToList();
-                foreach (PendingMoviePlaceholder target in targets)
+            _ = Dispatcher.InvokeAsync(
+                () =>
                 {
-                    MainVM.PendingMovieRecs.Remove(target);
-                }
-            });
+                    List<PendingMoviePlaceholder> targets = MainVM.PendingMovieRecs
+                        .Where(x =>
+                            !string.IsNullOrWhiteSpace(x.MoviePath)
+                            && x.MoviePath.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)
+                        )
+                        .ToList();
+                    foreach (PendingMoviePlaceholder target in targets)
+                    {
+                        MainVM.PendingMovieRecs.Remove(target);
+                    }
+                },
+                DispatcherPriority.Background
+            );
         }
     }
 }

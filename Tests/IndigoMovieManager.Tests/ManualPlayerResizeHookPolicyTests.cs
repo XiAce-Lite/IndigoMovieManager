@@ -41,6 +41,21 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
+    public void PlayerVolume_保存値リセット時は起動時に50へ戻す()
+    {
+        string playerSource = GetMainWindowPlayerSourceText();
+        string windowSource = GetRepoText("Views", "Main", "MainWindow.xaml.cs");
+
+        Assert.That(playerSource, Does.Contain("private const double DefaultPlayerVolume = 0.5d;"));
+        Assert.That(playerSource, Does.Contain("private static double ResolveSavedPlayerVolumeSetting(double volume)"));
+        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;"));
+        Assert.That(
+            windowSource,
+            Does.Contain("ResolveSavedPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume)")
+        );
+    }
+
+    [Test]
     public void WebViewPlayer_ホスト音量適用前の既定音量通知を抑止する()
     {
         string mainWindowPlayerSource = GetMainWindowPlayerSourceText();

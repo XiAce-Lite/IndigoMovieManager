@@ -450,7 +450,7 @@ namespace IndigoMovieManager
             _searchInputDebounceTimer.Tick += SearchInputDebounceTimer_Tick;
 
             // 保存済み音量を先に復元し、その値を内蔵プレイヤーと表示へ揃える。
-            double savedPlayerVolume = ClampPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume);
+            double savedPlayerVolume = ResolveSavedPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume);
             uxVolumeSlider.Value = savedPlayerVolume;
             uxVideoPlayer.Volume = savedPlayerVolume;
 

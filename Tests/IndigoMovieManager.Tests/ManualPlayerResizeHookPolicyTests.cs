@@ -80,6 +80,23 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(upperTabPlayerSource, Does.Contain("if (syncPlayerSelection)"));
     }
 
+    [Test]
+    public void PlayerThumbnailViewMode_同一モード再選択では再スクロールしない()
+    {
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (_isPlayerThumbnailCompactViewEnabled == enabled)")
+        );
+        Assert.That(upperTabPlayerSource, Does.Contain("return;"));
+        Assert.That(upperTabPlayerSource, Does.Contain("GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("RequestUpperTabVisibleRangeRefresh(immediate: true, reason: \"player-view-mode\");")
+        );
+    }
+
     private static string GetMainWindowPlayerSourceText()
     {
         return GetRepoText("Views", "Main", "MainWindow.Player.cs");

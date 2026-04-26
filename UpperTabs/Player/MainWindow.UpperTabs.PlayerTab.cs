@@ -606,6 +606,11 @@ namespace IndigoMovieManager
         // 右側一覧は 1列詳細と 3列小サムネを切り替え、選択中の動画だけは必ず持ち歩く。
         private void SetPlayerThumbnailCompactViewMode(bool enabled)
         {
+            if (_isPlayerThumbnailCompactViewEnabled == enabled)
+            {
+                return;
+            }
+
             _isPlayerThumbnailCompactViewEnabled = enabled;
 
             if (PlayerThumbnailList != null)

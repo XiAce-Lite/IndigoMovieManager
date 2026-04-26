@@ -229,7 +229,8 @@ namespace IndigoMovieManager
             int startMilliseconds,
             bool playImmediately,
             bool mute,
-            bool focusTimeSlider
+            bool focusTimeSlider,
+            bool syncPlayerSelection = true
         )
         {
             if (
@@ -250,7 +251,11 @@ namespace IndigoMovieManager
                 _suppressPlayerTabActivationAutoOpen = true;
                 try
                 {
-                    SyncUpperTabPlayerSelection(movie);
+                    if (syncPlayerSelection)
+                    {
+                        SyncUpperTabPlayerSelection(movie);
+                    }
+
                     SelectUpperTabByFixedIndex(PlayerTabIndex);
                     await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
                 }
@@ -261,7 +266,10 @@ namespace IndigoMovieManager
             }
             else
             {
-                SyncUpperTabPlayerSelection(movie);
+                if (syncPlayerSelection)
+                {
+                    SyncUpperTabPlayerSelection(movie);
+                }
             }
 
             // プレイヤータブの通常再生は WebView2 を正面採用し、

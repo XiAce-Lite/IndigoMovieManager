@@ -63,7 +63,8 @@ namespace IndigoMovieManager
                         0,
                         playImmediately: true,
                         mute: false,
-                        focusTimeSlider: false
+                        focusTimeSlider: false,
+                        syncPlayerSelection: false
                     );
                     return;
                 }

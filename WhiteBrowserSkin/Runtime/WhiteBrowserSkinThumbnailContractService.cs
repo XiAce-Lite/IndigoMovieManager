@@ -62,9 +62,7 @@ namespace IndigoMovieManager.Skin.Runtime
                 MovieSize = movie.Movie_Size,
                 Length = movie.Movie_Length ?? "",
                 Exists = movie.IsExists,
-                Selected =
-                    normalizedContext.SelectedMovieId.HasValue
-                    && normalizedContext.SelectedMovieId.Value == movie.Movie_Id,
+                Selected = IsMovieSelected(normalizedContext, movie.Movie_Id),
             };
         }
 
@@ -151,6 +149,19 @@ namespace IndigoMovieManager.Skin.Runtime
             }
 
             return ResolveMissingPlaceholderPath(context.DisplayTabIndex);
+        }
+
+        private static bool IsMovieSelected(
+            WhiteBrowserSkinThumbnailResolveContext context,
+            long movieId
+        )
+        {
+            if (context?.SelectedMovieIds != null && context.SelectedMovieIds.Count > 0)
+            {
+                return context.SelectedMovieIds.Contains(movieId);
+            }
+
+            return context?.SelectedMovieId.HasValue == true && context.SelectedMovieId.Value == movieId;
         }
 
         private static string ResolveSourceKind(MovieRecords movie, string resolvedThumbPath)

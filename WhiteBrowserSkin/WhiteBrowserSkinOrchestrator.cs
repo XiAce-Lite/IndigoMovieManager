@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using IndigoMovieManager.Skin.Runtime;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager.Skin
@@ -22,6 +23,8 @@ namespace IndigoMovieManager.Skin
         private readonly Func<int> getCurrentUpperTabFixedIndex;
         private readonly Func<int, string> resolvePersistedSkinNameByTabIndex;
         private readonly Func<int, string> resolveUpperTabStateNameByFixedIndex;
+        private readonly Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest;
+        private readonly Action<WhiteBrowserSkinStatePersistRequest> fallbackPersistRequest;
         private readonly string skinRootPath;
 
         private IReadOnlyList<WhiteBrowserSkinDefinition> availableSkinDefinitions =
@@ -37,6 +40,8 @@ namespace IndigoMovieManager.Skin
             Func<int> getCurrentUpperTabFixedIndex,
             Func<int, string> resolvePersistedSkinNameByTabIndex,
             Func<int, string> resolveUpperTabStateNameByFixedIndex,
+            Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest,
+            Action<WhiteBrowserSkinStatePersistRequest> fallbackPersistRequest = null,
             string skinRootPath = ""
         )
         {
@@ -62,6 +67,9 @@ namespace IndigoMovieManager.Skin
             this.resolveUpperTabStateNameByFixedIndex =
                 resolveUpperTabStateNameByFixedIndex
                 ?? throw new ArgumentNullException(nameof(resolveUpperTabStateNameByFixedIndex));
+            this.enqueuePersistRequest =
+                enqueuePersistRequest ?? throw new ArgumentNullException(nameof(enqueuePersistRequest));
+            this.fallbackPersistRequest = fallbackPersistRequest;
             this.skinRootPath = string.IsNullOrWhiteSpace(skinRootPath)
                 ? WhiteBrowserSkinCatalogService.ResolveSkinRootPath(AppContext.BaseDirectory)
                 : skinRootPath;
@@ -75,7 +83,10 @@ namespace IndigoMovieManager.Skin
 
         public string GetCurrentSkinName()
         {
-            return NormalizeStoredSkinName(getCurrentSkinNameFromViewModel());
+            return NormalizeStoredSkinNameCore(
+                getCurrentSkinNameFromViewModel(),
+                availableSkinDefinitions
+            );
         }
 
         public WhiteBrowserSkinDefinition GetCurrentSkinDefinition()
@@ -108,13 +119,35 @@ namespace IndigoMovieManager.Skin
 
         public string NormalizeStoredSkinName(string skinName)
         {
+            return NormalizeStoredSkinNameCore(skinName, availableSkinDefinitions);
+        }
+
+        private string NormalizeStoredSkinNameCore(
+            string skinName,
+            IReadOnlyList<WhiteBrowserSkinDefinition> loadedDefinitions
+        )
+        {
             string normalizedSkinName = skinName?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(normalizedSkinName))
             {
                 return DefaultGridSkinName;
             }
 
-            WhiteBrowserSkinDefinition exactDefinition = ResolveDefinitionByName(normalizedSkinName);
+            WhiteBrowserSkinDefinition exactDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(
+                    loadedDefinitions,
+                    normalizedSkinName
+                );
+            if (exactDefinition != null)
+            {
+                return exactDefinition.Name;
+            }
+
+            if (loadedDefinitions == null || loadedDefinitions.Count < 1)
+            {
+                exactDefinition = ResolveDefinitionByName(normalizedSkinName);
+            }
+
             return exactDefinition?.Name ?? normalizedSkinName;
         }
 
@@ -131,21 +164,50 @@ namespace IndigoMovieManager.Skin
 
             if (currentDefinition != null && !currentDefinition.IsBuiltIn)
             {
-                UpsertSystemTable(dbFullPath, "skin", currentDefinition.Name);
-                UpsertProfileTable(
-                    dbFullPath,
-                    currentDefinition.Name,
-                    SkinProfileLastUpperTabKey,
-                    currentTabStateName
+                PersistRequestOrFallback(
+                    WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                        dbFullPath,
+                        "skin",
+                        currentDefinition.Name,
+                        DebugRuntimeLog.GetCurrentScopeText()
+                    )
+                );
+                PersistRequestOrFallback(
+                    WhiteBrowserSkinStatePersistRequest.CreateProfile(
+                        dbFullPath,
+                        currentDefinition.Name,
+                        SkinProfileLastUpperTabKey,
+                        currentTabStateName,
+                        DebugRuntimeLog.GetCurrentScopeText()
+                    )
                 );
                 return;
             }
 
-            UpsertSystemTable(
-                dbFullPath,
-                "skin",
-                resolvePersistedSkinNameByTabIndex(currentTabIndex)
+            PersistRequestOrFallback(
+                WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                    dbFullPath,
+                    "skin",
+                    resolvePersistedSkinNameByTabIndex(currentTabIndex),
+                    DebugRuntimeLog.GetCurrentScopeText()
+                )
             );
+        }
+
+        private void PersistRequestOrFallback(WhiteBrowserSkinStatePersistRequest request)
+        {
+            if (request == null)
+            {
+                return;
+            }
+
+            if (enqueuePersistRequest(request))
+            {
+                return;
+            }
+
+            // shutdown 後など queue が閉じた時だけ、最後の状態を落とさないため直書き fallback へ回す。
+            fallbackPersistRequest?.Invoke(request);
         }
 
         private WhiteBrowserSkinDefinition ResolveCurrentDefinition()
@@ -181,7 +243,23 @@ namespace IndigoMovieManager.Skin
 
         private IReadOnlyList<WhiteBrowserSkinDefinition> BuildAvailableSkinDefinitionSnapshot()
         {
-            WhiteBrowserSkinDefinition currentDefinition = ResolveCurrentDefinition();
+            string currentSkinName = GetCurrentSkinName();
+            WhiteBrowserSkinDefinition currentDefinition = activeSkinDefinition;
+            if (
+                currentDefinition == null
+                || !string.Equals(currentDefinition.Name, currentSkinName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                // 一覧 snapshot のために catalog を掘り直さず、今ロード済みの definitions だけで現在 skin を解決する。
+                currentDefinition =
+                    WhiteBrowserSkinCatalogService.TryResolveExactByName(
+                        availableSkinDefinitions,
+                        currentSkinName
+                    )
+                    ?? CreateMissingExternalDefinition(currentSkinName);
+                activeSkinDefinition = currentDefinition;
+            }
+
             if (
                 currentDefinition == null
                 || !currentDefinition.IsMissing
@@ -215,6 +293,19 @@ namespace IndigoMovieManager.Skin
 
             if (!string.IsNullOrWhiteSpace(dbFullPath))
             {
+                if (
+                    WhiteBrowserSkinProfileValueCache.TryGetPersistedValue(
+                        dbFullPath,
+                        definition.Name,
+                        SkinProfileLastUpperTabKey,
+                        out string cachedTabState
+                    )
+                    && !string.IsNullOrWhiteSpace(cachedTabState)
+                )
+                {
+                    return normalizeTabStateName(cachedTabState);
+                }
+
                 string savedTabState = SelectProfileValue(
                     dbFullPath,
                     definition.Name,
@@ -222,6 +313,12 @@ namespace IndigoMovieManager.Skin
                 );
                 if (!string.IsNullOrWhiteSpace(savedTabState))
                 {
+                    WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                        dbFullPath,
+                        definition.Name,
+                        SkinProfileLastUpperTabKey,
+                        savedTabState
+                    );
                     return normalizeTabStateName(savedTabState);
                 }
             }

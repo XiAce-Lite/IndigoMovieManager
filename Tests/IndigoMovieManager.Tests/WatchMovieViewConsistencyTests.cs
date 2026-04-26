@@ -85,6 +85,18 @@ public sealed class WatchMovieViewConsistencyTests
     }
 
     [Test]
+    public void ShouldRefreshDisplayedMovieView_表示一覧がnullなら検索未使用時に再描画する()
+    {
+        bool result = MainWindow.ShouldRefreshDisplayedMovieView(
+            "",
+            displayedMoviePaths: null!,
+            movieFullPath: @"D:\Movies\missing.mp4"
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
     public void EvaluateMovieViewConsistency_DBにあり画面ソースに無ければ画面補正を返す()
     {
         HashSet<string> existingViewMoviePaths = MainWindow.BuildMoviePathLookup(
@@ -174,5 +186,45 @@ public sealed class WatchMovieViewConsistencyTests
 
         Assert.That(result.ShouldRepairView, Is.False);
         Assert.That(result.ShouldRefreshDisplayedView, Is.False);
+    }
+
+    [Test]
+    public void EvaluateMovieViewConsistency_DBに存在しない動画は補修しない()
+    {
+        HashSet<string> existingViewMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"D:\Movies\shown.mp4"]
+        );
+        HashSet<string> displayedMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"D:\Movies\shown.mp4"]
+        );
+
+        MainWindow.MovieViewConsistencyDecision result = MainWindow.EvaluateMovieViewConsistency(
+            allowViewConsistencyRepair: true,
+            existsInDb: false,
+            existingViewMoviePaths,
+            searchKeyword: "",
+            displayedMoviePaths,
+            movieFullPath: @"D:\Movies\missing.mp4"
+        );
+
+        Assert.That(result.ShouldRepairView, Is.False);
+        Assert.That(result.ShouldRefreshDisplayedView, Is.False);
+    }
+
+    [TestCase(true, true, true)]
+    [TestCase(true, false, false)]
+    [TestCase(false, true, false)]
+    public void ResolveAllowViewConsistencyRepair_incremental_uiの時だけ補修を許可する(
+        bool allowViewConsistencyRepair,
+        bool useIncrementalUiMode,
+        bool expected
+    )
+    {
+        bool result = MainWindow.ResolveAllowViewConsistencyRepair(
+            allowViewConsistencyRepair,
+            useIncrementalUiMode
+        );
+
+        Assert.That(result, Is.EqualTo(expected));
     }
 }

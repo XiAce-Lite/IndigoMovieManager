@@ -12,7 +12,7 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
     {
         RefreshSerializationResult result = await RunOnStaDispatcherAsync(async () =>
         {
-            List<(int Generation, string Reason)> invocations = [];
+            List<(int Generation, string Reason, string Request)> invocations = [];
             int currentConcurrency = 0;
             int maxConcurrency = 0;
             TaskCompletionSource<bool> firstStarted = new(
@@ -27,11 +27,11 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
 
             ExternalSkinHostRefreshScheduler scheduler = new(
                 Dispatcher.CurrentDispatcher,
-                async (generation, reason) =>
+                async (generation, reason, requestTraceId) =>
                 {
                     currentConcurrency++;
                     maxConcurrency = Math.Max(maxConcurrency, currentConcurrency);
-                    invocations.Add((generation, reason));
+                    invocations.Add((generation, reason, requestTraceId));
 
                     if (invocations.Count == 1)
                     {
@@ -49,11 +49,11 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
                 ex => throw new AssertionException($"refresh drain failed: {ex.Message}")
             );
 
-            scheduler.Queue("window-loaded");
+            scheduler.Queue("window-loaded", "rq0001");
             await WaitAsync(firstStarted.Task, TimeSpan.FromSeconds(5), "最初の refresh が始まりませんでした。");
 
-            scheduler.Queue("dbinfo-Skin");
-            scheduler.Queue("dbinfo-DBFullPath");
+            scheduler.Queue("dbinfo-Skin", "rq0002");
+            scheduler.Queue("dbinfo-DBFullPath", "rq0003");
             releaseFirst.TrySetResult(true);
 
             await WaitAsync(
@@ -73,8 +73,8 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
         {
             Assert.That(result.MaxConcurrency, Is.EqualTo(1));
             Assert.That(result.Invocations, Has.Length.EqualTo(2));
-            Assert.That(result.Invocations[0], Is.EqualTo((1, "window-loaded")));
-            Assert.That(result.Invocations[1], Is.EqualTo((3, "dbinfo-DBFullPath")));
+            Assert.That(result.Invocations[0], Is.EqualTo((1, "window-loaded", "rq0001")));
+            Assert.That(result.Invocations[1], Is.EqualTo((3, "dbinfo-DBFullPath", "rq0003")));
             Assert.That(result.FinalGeneration, Is.EqualTo(3));
         });
     }
@@ -84,8 +84,8 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
     {
         RefreshApplyResult result = await RunOnStaDispatcherAsync(async () =>
         {
-            List<(int Generation, string Reason)> refreshed = [];
-            List<(int Generation, string Reason)> applied = [];
+            List<(int Generation, string Reason, string Request)> refreshed = [];
+            List<(int Generation, string Reason, string Request)> applied = [];
             TaskCompletionSource<bool> firstStarted = new(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
@@ -99,9 +99,9 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
             ExternalSkinHostRefreshScheduler? scheduler = null;
             scheduler = new ExternalSkinHostRefreshScheduler(
                 Dispatcher.CurrentDispatcher,
-                async (generation, reason) =>
+                async (generation, reason, requestTraceId) =>
                 {
-                    refreshed.Add((generation, reason));
+                    refreshed.Add((generation, reason, requestTraceId));
 
                     if (generation == 1)
                     {
@@ -112,17 +112,17 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
                     // MainWindow 側と同じく、完了時点で最新 generation だけを適用対象にする。
                     if (generation == scheduler!.CurrentGeneration)
                     {
-                        applied.Add((generation, reason));
+                        applied.Add((generation, reason, requestTraceId));
                         latestApplied.TrySetResult(true);
                     }
                 },
                 ex => throw new AssertionException($"refresh drain failed: {ex.Message}")
             );
 
-            scheduler.Queue("dbinfo-Skin");
+            scheduler.Queue("dbinfo-Skin", "rq0101");
             await WaitAsync(firstStarted.Task, TimeSpan.FromSeconds(5), "最初の refresh が始まりませんでした。");
 
-            scheduler.Queue("dbinfo-DBFullPath");
+            scheduler.Queue("dbinfo-DBFullPath", "rq0102");
             releaseFirst.TrySetResult(true);
 
             await WaitAsync(
@@ -137,9 +137,9 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
         Assert.Multiple(() =>
         {
             Assert.That(result.Refreshed, Has.Length.EqualTo(2));
-            Assert.That(result.Refreshed[0], Is.EqualTo((1, "dbinfo-Skin")));
-            Assert.That(result.Refreshed[1], Is.EqualTo((2, "dbinfo-DBFullPath")));
-            Assert.That(result.Applied, Is.EqualTo(new[] { (2, "dbinfo-DBFullPath") }));
+            Assert.That(result.Refreshed[0], Is.EqualTo((1, "dbinfo-Skin", "rq0101")));
+            Assert.That(result.Refreshed[1], Is.EqualTo((2, "dbinfo-DBFullPath", "rq0102")));
+            Assert.That(result.Applied, Is.EqualTo(new[] { (2, "dbinfo-DBFullPath", "rq0102") }));
         });
     }
 
@@ -194,12 +194,12 @@ public sealed class ExternalSkinHostRefreshSchedulerTests
 
     private sealed record RefreshSerializationResult(
         int MaxConcurrency,
-        (int Generation, string Reason)[] Invocations,
+        (int Generation, string Reason, string Request)[] Invocations,
         int FinalGeneration
     );
 
     private sealed record RefreshApplyResult(
-        (int Generation, string Reason)[] Refreshed,
-        (int Generation, string Reason)[] Applied
+        (int Generation, string Reason, string Request)[] Refreshed,
+        (int Generation, string Reason, string Request)[] Applied
     );
 }

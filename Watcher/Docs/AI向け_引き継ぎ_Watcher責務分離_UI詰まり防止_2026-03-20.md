@@ -55,6 +55,8 @@
 - deferred batch が残っている回でも新規候補の再収集は継続し、`visible-only` 中の新しい visible 候補は旧 backlog と再マージしたうえで先に返す形へ補正した
 - `missing-tab-thumb` は `0..4` の通常上側タブだけを対象にし、`tab=5` へ絶対通らない job を作らないようにした
 - 左ドロワー表示中は `EverythingPoll` と `Created` 由来の watch 新規流入だけ抑制し、閉じた時に catch-up を 1 回だけ流す
+- watch 由来の最終 UI 再描画は、変更が in-memory 一覧へ反映済みで起動時部分ロード中でもない時だけ `query-only` 再計算へ寄せ、必要時だけ full reload を維持する
+- rename 後の一覧追従は DB 再読込へ戻さず、`MainVM.MovieRecs` を元に再検索・再整列して bookmark 再読込と合わせて軽く反映する
 
 ## 3. 現在の見取り図
 

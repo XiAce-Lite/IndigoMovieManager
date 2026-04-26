@@ -13,8 +13,10 @@ namespace IndigoMovieManager.Infrastructure
         private readonly Func<string> getSortId;
         private readonly Action<string> setSearchKeyword;
         private readonly Action<string> syncSearchBoxText;
+        private readonly Action<string> beginUserPriorityWork;
+        private readonly Action<string> endUserPriorityWork;
         private readonly Action restartThumbnailTask;
-        private readonly Func<string, bool, Task> filterAndSortAsync;
+        private readonly Func<string, Task> refreshSearchResultsAsync;
         private readonly Action selectFirstItem;
 
         public SearchExecutionController(
@@ -22,8 +24,10 @@ namespace IndigoMovieManager.Infrastructure
             Func<string> getSortId,
             Action<string> setSearchKeyword,
             Action<string> syncSearchBoxText,
+            Action<string> beginUserPriorityWork,
+            Action<string> endUserPriorityWork,
             Action restartThumbnailTask,
-            Func<string, bool, Task> filterAndSortAsync,
+            Func<string, Task> refreshSearchResultsAsync,
             Action selectFirstItem
         )
         {
@@ -31,8 +35,10 @@ namespace IndigoMovieManager.Infrastructure
             this.getSortId = getSortId;
             this.setSearchKeyword = setSearchKeyword;
             this.syncSearchBoxText = syncSearchBoxText;
+            this.beginUserPriorityWork = beginUserPriorityWork;
+            this.endUserPriorityWork = endUserPriorityWork;
             this.restartThumbnailTask = restartThumbnailTask;
-            this.filterAndSortAsync = filterAndSortAsync;
+            this.refreshSearchResultsAsync = refreshSearchResultsAsync;
             this.selectFirstItem = selectFirstItem;
         }
 
@@ -49,11 +55,21 @@ namespace IndigoMovieManager.Infrastructure
                 syncSearchBoxText(normalizedText);
             }
 
-            setSearchKeyword(normalizedText);
-            restartThumbnailTask();
-            await filterAndSortAsync(getSortId(), true);
-            selectFirstItem();
-            return true;
+            beginUserPriorityWork("search");
+            try
+            {
+                setSearchKeyword(normalizedText);
+                restartThumbnailTask();
+                // 検索実行後の再描画は注入側に委ね、通常時は query-only、
+                // 起動直後の部分ロード中だけ full reload へ切り替えられるようにする。
+                await refreshSearchResultsAsync(getSortId());
+                selectFirstItem();
+                return true;
+            }
+            finally
+            {
+                endUserPriorityWork("search");
+            }
         }
     }
 }

@@ -208,7 +208,7 @@ namespace IndigoMovieManager
 
                         _startupLightServicesStarted = true;
                         ReloadBookmarkTabData();
-                        CreateWatcher();
+                        QueueStartupWatcherCreation(revision);
                         QueueThumbnailSuccessIndexPrewarm();
                         QueueEverythingLiteWatchRootPrewarm();
                         DebugRuntimeLog.Write(
@@ -230,6 +230,27 @@ namespace IndigoMovieManager
                     $"startup deferred services failed: revision={revision} err='{ex.GetType().Name}: {ex.Message}'"
                 );
             }
+        }
+
+        // 起動直後の first-page 表示を優先し、watcher 作成は UI が一息ついてから始める。
+        private void QueueStartupWatcherCreation(int revision)
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.ApplicationIdle,
+                new Action(() =>
+                {
+                    if (!_startupLoadCoordinator.IsCurrent(revision) || !_startupLightServicesStarted)
+                    {
+                        return;
+                    }
+
+                    CreateWatcher();
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"startup watcher started: revision={revision} elapsed_ms={_startupUiStopwatch.ElapsedMilliseconds}"
+                    );
+                })
+            );
         }
 
         // first-page 表示後に各タブの成功jpgインデックスを裏で温め、最初の同期走査を起きにくくする。

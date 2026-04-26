@@ -20,6 +20,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        internal Action ReloadBookmarkTabDataForTesting { get; set; }
+        internal Func<string, bool, Task> FilterAndSortAsyncForTesting { get; set; }
+
         private enum DeleteActionMode
         {
             UnregisterOnly = 0,
@@ -1622,14 +1625,71 @@ namespace IndigoMovieManager
         /// <summary>
         /// 開発者用テストボタン！各表示部材を手動で強制リロードする禁断の力だ！🔧
         /// </summary>
-        private void ReloadButton_Click(object sender, RoutedEventArgs e)
+        private async void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
-            ReloadBookmarkTabData();
-            FilterAndSort(MainVM.DbInfo.Sort, true);
-            Refresh();
+            await ExecuteHeaderReloadAsync(MainVM.DbInfo.Sort, "Header.ReloadButton");
+        }
 
-            // 拡張子追加直後でも、この再読込から監視フォルダ全体を拾い直せるようにする。
-            _ = QueueCheckFolderAsync(CheckMode.Manual, "Header.ReloadButton");
+        // 再読込は full filter と manual scan を直列化し、その間の watch 差し込みを抑えて過積載を避ける。
+        internal async Task ExecuteHeaderReloadAsync(string sortId, string trigger)
+        {
+            Action reloadBookmarkHook = ReloadBookmarkTabDataForTesting;
+            if (reloadBookmarkHook != null)
+            {
+                reloadBookmarkHook();
+            }
+            else
+            {
+                ReloadBookmarkTabData();
+            }
+
+            BeginWatchUiSuppression("manual-reload");
+            try
+            {
+                Func<string, bool, Task> filterHook = FilterAndSortAsyncForTesting;
+                if (filterHook != null)
+                {
+                    await filterHook(sortId, true);
+                }
+                else
+                {
+                    await FilterAndSortAsync(sortId, true);
+                }
+
+                // 再読込完了を先に返し、重い全域scanはUIが一息ついてから背後へ回す。
+                ScheduleDeferredManualReloadScan(trigger);
+            }
+            finally
+            {
+                EndWatchUiSuppression("manual-reload");
+            }
+        }
+
+        // Header再読込の直後だけは一覧更新の体感を優先し、全域scanは1拍後ろへ逃がす。
+        private void ScheduleDeferredManualReloadScan(string trigger)
+        {
+            _ = RunDeferredManualReloadScanAsync(trigger);
+        }
+
+        private async Task RunDeferredManualReloadScanAsync(string trigger)
+        {
+            try
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"manual reload deferred scan scheduled: trigger={trigger}"
+                );
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                await Task.Delay(250);
+                await QueueCheckFolderAsync(CheckMode.Manual, $"{trigger}:deferred");
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"manual reload deferred scan failed: trigger={trigger} reason='{ex.Message}'"
+                );
+            }
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
@@ -1674,34 +1734,21 @@ namespace IndigoMovieManager
                                     DataContext = sysData,
                                 };
                                 settingsWindow.ShowDialog();
-
-                                UpsertSystemTable(
+                                int persistedSettingsCount = PersistDbSettingsValues(
                                     MainVM.DbInfo.DBFullPath,
-                                    "thum",
-                                    settingsWindow.ThumbFolder.Text
+                                    settingsWindow.ThumbFolder.Text,
+                                    settingsWindow.BookmarkFolder.Text,
+                                    settingsWindow.KeepHistory.Text,
+                                    settingsWindow.PlayerPrg.Text,
+                                    settingsWindow.PlayerParam.Text?.ToString() ?? ""
                                 );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "bookmark",
-                                    settingsWindow.BookmarkFolder.Text
-                                );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "keepHistory",
-                                    settingsWindow.KeepHistory.Text
-                                );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "playerPrg",
-                                    settingsWindow.PlayerPrg.Text
-                                );
-                                var param =
-                                    settingsWindow.PlayerParam.Text == null
-                                        ? ""
-                                        : settingsWindow.PlayerParam.Text.ToString();
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
-
-                                GetSystemTable(MainVM.DbInfo.DBFullPath);
+                                if (persistedSettingsCount != 5)
+                                {
+                                    DebugRuntimeLog.Write(
+                                        "skin-db",
+                                        $"settings persist partial: success={persistedSettingsCount}/5 db='{MainVM.DbInfo.DBFullPath}'"
+                                    );
+                                }
                                 break;
                             default:
                                 break;
@@ -1719,6 +1766,32 @@ namespace IndigoMovieManager
                     }
                 }
             }
+        }
+
+        private int PersistDbSettingsValues(
+            string dbFullPath,
+            string thumbFolder,
+            string bookmarkFolder,
+            string keepHistory,
+            string playerPrg,
+            string playerParam
+        )
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return 0;
+            }
+
+            // 個別設定画面の各入力を、UI からはまとめて保存要求するだけに寄せる。
+            int persistedCount = 0;
+
+            persistedCount += TryPersistSystemValue(dbFullPath, "thum", thumbFolder ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "bookmark", bookmarkFolder ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "keepHistory", keepHistory ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "playerPrg", playerPrg ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "playerParam", playerParam ?? "") ? 1 : 0;
+
+            return persistedCount;
         }
 
         private void MenuBtnTool_Click(object sender, RoutedEventArgs e)

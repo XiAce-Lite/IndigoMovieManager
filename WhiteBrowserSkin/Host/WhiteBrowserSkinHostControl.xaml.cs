@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using IndigoMovieManager.Skin.Runtime;
+using Microsoft.Web.WebView2.Core;
 
 namespace IndigoMovieManager.Skin.Host
 {
@@ -7,10 +8,11 @@ namespace IndigoMovieManager.Skin.Host
     /// WhiteBrowser 互換スキン専用の WebView2 ホスト。
     /// MainWindow 側はこの control を出し入れするだけで良い形を目指す。
     /// </summary>
-    public partial class WhiteBrowserSkinHostControl : UserControl
+    public partial class WhiteBrowserSkinHostControl : UserControl, IDisposable
     {
         private readonly WhiteBrowserSkinRuntimeBridge runtimeBridge = new();
         private readonly WhiteBrowserSkinRenderCoordinator renderCoordinator = new();
+        private bool disposed;
 
         public WhiteBrowserSkinHostControl()
         {
@@ -51,6 +53,14 @@ namespace IndigoMovieManager.Skin.Host
             string thumbRootPath
         )
         {
+            if (disposed)
+            {
+                return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                    requestedSkinName ?? "",
+                    "External skin host is already disposed."
+                );
+            }
+
             WhiteBrowserSkinHostOperationResult attachResult = await runtimeBridge.TryEnsureAttachedAsync(
                 SkinWebView,
                 requestedSkinName,
@@ -63,16 +73,28 @@ namespace IndigoMovieManager.Skin.Host
                 return attachResult;
             }
 
+            // 旧ページの終了 callback を先に返してから、新しい skin を流し込む。
+            await runtimeBridge.HandleSkinLeaveAsync();
             WhiteBrowserSkinRenderDocument document = renderCoordinator.BuildInitialDocument(
                 skinRootPath,
                 skinHtmlPath
             );
-            SkinWebView.NavigateToString(document.Html);
+            await NavigateToStringAsync(document.Html);
             return WhiteBrowserSkinHostOperationResult.CreateSuccess(requestedSkinName);
         }
 
         public void Clear()
         {
+            _ = ClearIgnoringErrorsAsync();
+        }
+
+        public async Task ClearAsync()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
             runtimeBridge.ClearRegisteredExternalThumbnailPaths();
             // 終了経路では未初期化の host も来るので、その時は空 HTML への遷移を無理に撃たない。
             if (SkinWebView.CoreWebView2 == null)
@@ -80,7 +102,13 @@ namespace IndigoMovieManager.Skin.Host
                 return;
             }
 
-            SkinWebView.NavigateToString("<html><body></body></html>");
+            await runtimeBridge.HandleSkinLeaveAsync();
+            await NavigateToStringAsync("<html><body></body></html>");
+        }
+
+        public Task HandleSkinLeaveAsync()
+        {
+            return runtimeBridge.HandleSkinLeaveAsync();
         }
 
         public void RegisterExternalThumbnailPath(string thumbPath)
@@ -103,12 +131,98 @@ namespace IndigoMovieManager.Skin.Host
             return runtimeBridge.DispatchCallbackAsync(callbackName, payload);
         }
 
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            runtimeBridge.WebMessageReceived -= RuntimeBridge_WebMessageReceived;
+            runtimeBridge.Dispose();
+
+            try
+            {
+                // WPF の visual tree から外した後も hwnd が残ることがあるため、
+                // 終了時は WebView2 実体まで明示破棄して close race を減らす。
+                SkinWebView?.Dispose();
+            }
+            catch
+            {
+                // 終了経路では host 破棄を優先する。
+            }
+        }
+
         private void RuntimeBridge_WebMessageReceived(
             object sender,
             WhiteBrowserSkinWebMessageReceivedEventArgs e
         )
         {
             WebMessageReceived?.Invoke(this, e);
+        }
+
+        private async Task ClearIgnoringErrorsAsync()
+        {
+            try
+            {
+                await ClearAsync();
+            }
+            catch
+            {
+                // 終了経路では host 破棄を優先し、blank 遷移失敗は握りつぶす。
+            }
+        }
+
+        private async Task NavigateToStringAsync(string html)
+        {
+            if (disposed)
+            {
+                throw new InvalidOperationException("External skin host is already disposed.");
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            EventHandler<CoreWebView2NavigationCompletedEventArgs> handler = null;
+            handler = (_, args) =>
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                    return;
+                }
+
+                navigationCompleted.TrySetException(
+                    new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                );
+            };
+
+            SkinWebView.NavigationCompleted += handler;
+            try
+            {
+                SkinWebView.NavigateToString(html ?? "<html><body></body></html>");
+            }
+            catch
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                throw;
+            }
+
+            Task completedTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(completedTask, navigationCompleted.Task))
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                throw new TimeoutException(
+                    "WhiteBrowser skin host の NavigateToString が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await navigationCompleted.Task;
         }
     }
 }

@@ -3,16 +3,18 @@
   <RootPanel Orientation="Vertical">
     <LayoutPanel Orientation="Horizontal" CanDock="False" DockHeight="0.6432292459717216*">
       <LayoutDocumentPane ShowHeader="False">
-        <LayoutDocument Title="Document1" IsSelected="True" IsLastFocusedDocument="True" ContentId="Document1" LastActivationTimeStamp="03/17/2026 17:33:30" />
+        <LayoutDocument Title="Document1" IsSelected="True" IsLastFocusedDocument="True" ContentId="Document1" LastActivationTimeStamp="04/24/2026 23:39:48" />
       </LayoutDocumentPane>
     </LayoutPanel>
     <LayoutAnchorablePane DockHeight="550.6666666666665">
+      <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="タグ" ContentId="ToolTagEditor" />
       <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="詳細" ContentId="ToolExtension" LastActivationTimeStamp="03/17/2026 17:33:28" />
       <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="ブックマーク" ContentId="ToolBookmark" />
       <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="保存済み検索条件" ContentId="ToolTagBar" LastActivationTimeStamp="03/17/2026 00:15:28" />
       <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="サムネイル進捗" IsSelected="True" ContentId="ToolThumbnailProgress" LastActivationTimeStamp="03/17/2026 17:36:16" />
-      <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="サムネ失敗" ContentId="ToolThumbnailError" LastActivationTimeStamp="03/17/2026 17:36:12" />
+      <LayoutAnchorable CanHide="False" AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="サムネ失敗Debug" ContentId="ToolThumbnailError" LastActivationTimeStamp="03/17/2026 17:36:12" />
       <LayoutAnchorable AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="Debug" ContentId="ToolDebug" LastActivationTimeStamp="03/17/2026 17:36:10" />
+      <LayoutAnchorable AutoHideHeight="200" AutoHideMinWidth="100" AutoHideMinHeight="100" CanDockAsTabbedDocument="False" Title="Log" ContentId="ToolLog" />
     </LayoutAnchorablePane>
   </RootPanel>
   <TopSide />

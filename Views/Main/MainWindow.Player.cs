@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using IndigoMovieManager.Thumbnail;
 using static IndigoMovieManager.DB.SQLite;
 
@@ -18,6 +19,96 @@ namespace IndigoMovieManager
         private bool _isTimeSliderSyncingFromPlayer;
         private bool _isTimeSliderDragging;
         private bool _isManualPlayerResizeTrackingHooked;
+        private bool _isPlayerVolumeSyncingFromWebView;
+        private DispatcherTimer _playerVolumeSaveDebounceTimer;
+
+        // 保存済み設定が壊れていても、音量は常に 0.0 から 1.0 の安全域へ戻す。
+        private static double ClampPlayerVolumeSetting(double volume)
+        {
+            if (double.IsNaN(volume) || double.IsInfinity(volume))
+            {
+                return 0.5d;
+            }
+
+            return Math.Max(0d, Math.Min(1d, volume));
+        }
+
+        // 画面表示と保存値を同じ音量へ寄せ、次に開く動画にもそのまま引き継ぐ。
+        private void ApplyPlayerVolumeSetting(double volume, bool pushToWebView)
+        {
+            double resolvedVolume = ClampPlayerVolumeSetting(volume);
+
+            uxVideoPlayer.Volume = resolvedVolume;
+
+            if (uxVolume != null)
+            {
+                uxVolume.Text = ((int)(resolvedVolume * 100)).ToString();
+            }
+
+            Properties.Settings.Default.PlayerVolume = resolvedVolume;
+            QueuePlayerVolumeSettingSave();
+
+            if (!pushToWebView || uxWebVideoPlayer?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            _ = uxWebVideoPlayer.ExecuteScriptAsync(
+                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; }}"
+            );
+        }
+
+        // スライダー操作中の連続保存を畳み、UIスレッドの細かい詰まりを避ける。
+        private void QueuePlayerVolumeSettingSave()
+        {
+            if (_playerVolumeSaveDebounceTimer == null)
+            {
+                _playerVolumeSaveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(500),
+                };
+                _playerVolumeSaveDebounceTimer.Tick += PlayerVolumeSaveDebounceTimer_Tick;
+            }
+
+            StopDispatcherTimerSafely(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+            TryStartDispatcherTimer(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+        }
+
+        private void PlayerVolumeSaveDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            StopDispatcherTimerSafely(
+                _playerVolumeSaveDebounceTimer,
+                nameof(_playerVolumeSaveDebounceTimer)
+            );
+            Properties.Settings.Default.Save();
+        }
+
+        // WebView2 のネイティブ音量変更も設定へ戻し、以後の全動画へ同じ値を配る。
+        private void SyncPlayerVolumeFromWebView(double volume)
+        {
+            double resolvedVolume = ClampPlayerVolumeSetting(volume);
+
+            _isPlayerVolumeSyncingFromWebView = true;
+            try
+            {
+                if (uxVolumeSlider != null && Math.Abs(uxVolumeSlider.Value - resolvedVolume) > 0.0001d)
+                {
+                    uxVolumeSlider.Value = resolvedVolume;
+                }
+            }
+            finally
+            {
+                _isPlayerVolumeSyncingFromWebView = false;
+            }
+
+            ApplyPlayerVolumeSetting(resolvedVolume, pushToWebView: false);
+        }
 
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
@@ -184,9 +275,16 @@ namespace IndigoMovieManager
         /// </summary>
         private void Start_Click(object sender, RoutedEventArgs e)
         {
-            PlayerArea.Visibility = Visibility.Visible;
-            PlayerController.Visibility = Visibility.Visible;
-            uxVideoPlayer.Visibility = Visibility.Visible;
+            if (_isWebViewPlayerActive)
+            {
+                IsPlaying = true;
+                _ = uxWebVideoPlayer?.ExecuteScriptAsync(
+                    "document.querySelector('video')?.play();"
+                );
+                return;
+            }
+
+            ShowPlayerSurface();
             uxVideoPlayer.Play();
             IsPlaying = true;
             uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
@@ -198,6 +296,12 @@ namespace IndigoMovieManager
         /// </summary>
         private void Pause_Click(object sender, RoutedEventArgs e)
         {
+            if (_isWebViewPlayerActive)
+            {
+                _ = PauseWebViewPlayerAsync();
+                return;
+            }
+
             uxVideoPlayer.Pause();
             IsPlaying = false;
         }
@@ -244,7 +348,7 @@ namespace IndigoMovieManager
             {
                 uxVideoPlayer.Position = TimeSpan.FromMilliseconds(uxTimeSlider.Value);
                 _lastSliderTime = now;
-                uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
+                UpdatePlayerPositionUi(uxVideoPlayer.Position);
             }
         }
 
@@ -258,7 +362,9 @@ namespace IndigoMovieManager
                 uxVideoPlayer.NaturalDuration,
                 uxTimeSlider.Maximum
             );
+            ShowPlayerSurface();
             UpdateManualPlayerViewport();
+            _ = ApplyPendingPlayerPlaybackRequestAsync();
         }
 
         internal static double ResolveMediaDurationMaximumMilliseconds(
@@ -329,19 +435,59 @@ namespace IndigoMovieManager
                 return;
             }
 
-            double controllerHeight = PlayerController.ActualHeight > 1d
-                ? PlayerController.ActualHeight
-                : ManualPlayerFallbackControllerHeight;
-            double availableWidth = Math.Max(0d, ActualWidth - ManualPlayerHorizontalPadding);
-            double availableHeight = Math.Max(
-                0d,
-                ActualHeight - ManualPlayerVerticalPadding - controllerHeight
-            );
+            if (_isDetachedPlayerFullscreenActive)
+            {
+                if (uxWebVideoPlayer != null)
+                {
+                    // 全画面中は専用Window側で全面ストレッチさせ、MainWindow側サイズは持ち込まない。
+                    uxWebVideoPlayer.Width = double.NaN;
+                    uxWebVideoPlayer.Height = double.NaN;
+                }
+
+                return;
+            }
+
+            double controllerHeight = PlayerController.Visibility == Visibility.Visible
+                ? (
+                    PlayerController.ActualHeight > 1d
+                        ? PlayerController.ActualHeight
+                        : ManualPlayerFallbackControllerHeight
+                )
+                : 0d;
+            double availableWidth;
+            double availableHeight;
+            double preferredLandscapeWidth = ManualPlayerPreferredLandscapeWidth;
+            if (!TryGetPlayerTabViewportSize(out availableWidth, out availableHeight))
+            {
+                availableWidth = Math.Max(0d, ActualWidth - ManualPlayerHorizontalPadding);
+                availableHeight = Math.Max(
+                    0d,
+                    ActualHeight - ManualPlayerVerticalPadding - controllerHeight
+                );
+            }
+            else
+            {
+                availableHeight = Math.Max(0d, availableHeight - controllerHeight);
+                preferredLandscapeWidth = 0d;
+            }
+
+            if (_isWebViewPlayerActive)
+            {
+                // WebView2 はプレイヤー枠いっぱいに広げ、内側余白だけを残して使い切る。
+                uxWebVideoPlayer.Width = availableWidth;
+                uxWebVideoPlayer.Height = availableHeight;
+                PlayerArea.Width = availableWidth;
+                PlayerArea.Height = availableHeight + controllerHeight;
+                PlayerController.Width = availableWidth;
+                return;
+            }
+
             Size viewportSize = ResolveManualPlayerViewportSize(
                 availableWidth,
                 availableHeight,
                 uxVideoPlayer.NaturalVideoWidth,
-                uxVideoPlayer.NaturalVideoHeight
+                uxVideoPlayer.NaturalVideoHeight,
+                preferredLandscapeWidth
             );
             if (viewportSize.Width <= 0d || viewportSize.Height <= 0d)
             {
@@ -351,7 +497,13 @@ namespace IndigoMovieManager
             // 動画面と操作バーの横幅を揃え、縦動画でも画面内へ収める。
             uxVideoPlayer.Width = viewportSize.Width;
             uxVideoPlayer.Height = viewportSize.Height;
+            if (uxWebVideoPlayer != null)
+            {
+                uxWebVideoPlayer.Width = viewportSize.Width;
+                uxWebVideoPlayer.Height = viewportSize.Height;
+            }
             PlayerArea.Width = viewportSize.Width;
+            PlayerArea.Height = viewportSize.Height + controllerHeight;
             PlayerController.Width = viewportSize.Width;
         }
 
@@ -378,16 +530,30 @@ namespace IndigoMovieManager
 
         private void CloseManualPlayerOverlay()
         {
+            _ = ForceCloseMainWindowPlayerFullscreenAsync();
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Stop();
+            uxVideoPlayer.Source = null;
+            _hasPendingPlayerPlaybackRequest = false;
+            _currentPlayerMoviePath = "";
+            ResetWebViewPlayerSurface();
             IsPlaying = false;
+            uxTimeSlider.Value = 0;
+            uxTimeSlider.Maximum = 0;
+            uxTime.Text = "00:00:00";
             StopDispatcherTimerSafely(timer, nameof(timer));
+            ShowPlayerEmptyState();
         }
 
         private bool TryHandleManualPlayerShortcut(KeyEventArgs e)
         {
+            if (TryHandleMainWindowPlayerFullscreenShortcut(e))
+            {
+                return true;
+            }
+
             if (
                 e == null
                 || e.Key != Key.Escape
@@ -410,11 +576,17 @@ namespace IndigoMovieManager
             RoutedPropertyChangedEventArgs<double> e
         )
         {
-            uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            if (uxVolume != null)
+            double resolvedVolume = ClampPlayerVolumeSetting(uxVolumeSlider.Value);
+            if (Math.Abs(uxVolumeSlider.Value - resolvedVolume) > double.Epsilon)
             {
-                uxVolume.Text = ((int)(uxVideoPlayer.Volume * 100)).ToString();
+                uxVolumeSlider.Value = resolvedVolume;
+                return;
             }
+
+            ApplyPlayerVolumeSetting(
+                resolvedVolume,
+                pushToWebView: _isWebViewPlayerActive && !_isPlayerVolumeSyncingFromWebView
+            );
         }
 
         /// <summary>
@@ -551,27 +723,13 @@ namespace IndigoMovieManager
                 }
             }
 
-            //動画ファイルの指定
-            uxVideoPlayer.Source = new Uri(mv.Movie_Path);
-            await Task.Delay(1000);
-
-            //動画の再生
-            uxVideoPlayer.Volume = 0;
-            uxVideoPlayer.Play();
-
-            //再生位置の移動
-            uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, msec);
-            //uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            uxVideoPlayer.Pause();
-            await Task.Delay(100);
-            IsPlaying = false;
-            PlayerArea.Visibility = Visibility.Visible;
-            uxVideoPlayer.Visibility = Visibility.Visible;
-            PlayerController.Visibility = Visibility.Visible;
-            UpdateManualPlayerViewport();
-            uxTimeSlider.Focus();
-
-            TryStartDispatcherTimer(timer, nameof(timer));
+            await OpenMovieInPlayerTabAsync(
+                mv,
+                msec,
+                playImmediately: false,
+                mute: true,
+                focusTimeSlider: true
+            );
         }
 
         private void FR_Click(object sender, RoutedEventArgs e)
@@ -598,7 +756,7 @@ namespace IndigoMovieManager
         {
             uxTimeSlider.Value = tempSlider;
             uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, tempSlider);
-            uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
+            UpdatePlayerPositionUi(uxVideoPlayer.Position);
         }
 
         /// <summary>
@@ -606,13 +764,18 @@ namespace IndigoMovieManager
         /// </summary>
         private void Timer_Tick(object sender, EventArgs e)
         {
+            if (_isWebViewPlayerActive)
+            {
+                return;
+            }
+
             if (!_isTimeSliderDragging)
             {
                 _isTimeSliderSyncingFromPlayer = true;
                 try
                 {
                     uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
-                    uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
+                    UpdatePlayerPositionUi(uxVideoPlayer.Position);
                 }
                 finally
                 {
@@ -646,9 +809,15 @@ namespace IndigoMovieManager
 
             _isTimeSliderDragging = false;
 
+            if (_isWebViewPlayerActive)
+            {
+                _lastSliderTime = DateTime.Now;
+                return;
+            }
+
             TimeSpan nextPosition = TimeSpan.FromMilliseconds(uxTimeSlider.Value);
             uxVideoPlayer.Position = nextPosition;
-            uxTime.Text = nextPosition.ToString()[..8];
+            UpdatePlayerPositionUi(nextPosition);
             _lastSliderTime = DateTime.Now;
         }
     }

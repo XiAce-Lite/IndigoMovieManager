@@ -169,6 +169,11 @@ namespace IndigoMovieManager
                 return UpperTabGridFixedIndex;
             }
 
+            if (currentTabIndex == PlayerTabIndex)
+            {
+                return UpperTabGridFixedIndex;
+            }
+
             return currentTabIndex;
         }
 

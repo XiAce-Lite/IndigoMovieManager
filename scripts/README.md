@@ -90,6 +90,10 @@
   - 重い動画の抽出補助です。
 - `run_fileindex_ab_ci.ps1`
   - FileIndex の比較実行補助です。
+- `.github/workflows/fileindex-ab-tests.yml`
+  - Public repo の PR CI でも package consume 前提を崩さないため、`run_fileindex_ab_ci.ps1` 実行前に公開ミラー release から `Contracts / Engine / FailureDb` package を同期します。
+  - `PRIVATE_ENGINE_RELEASE_TAG` があればそれを使い、未設定時は package asset または manifest を持つ最新 mirror release tag を自動解決します。
+  - `PUBLIC_ENGINE_MIRROR_REPO` は任意で、未設定時は `T-Hamada0101/IndigoMovieEngine-Mirror` を既定値として使います。
 - `everythinglite_sync.ps1`
   - EverythingLite 周辺の同期補助です。
 - `Check-Mojibake.ps1`

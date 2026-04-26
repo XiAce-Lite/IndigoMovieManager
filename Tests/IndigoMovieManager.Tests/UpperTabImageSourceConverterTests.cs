@@ -1,7 +1,9 @@
 using System.Drawing;
 using System.Globalization;
 using System.Threading;
+using System.Windows;
 using System.Windows.Data;
+using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.UpperTabs.Common;
 
 namespace IndigoMovieManager.Tests;
@@ -9,6 +11,18 @@ namespace IndigoMovieManager.Tests;
 [TestFixture]
 public sealed class UpperTabImageSourceConverterTests
 {
+    [SetUp]
+    public void SetUp()
+    {
+        UpperTabActivationGate.ClearPreferredMoviePathKeys();
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        UpperTabActivationGate.ClearPreferredMoviePathKeys();
+    }
+
     [Test]
     public void 非アクティブタブでは画像更新しない()
     {
@@ -18,7 +32,22 @@ public sealed class UpperTabImageSourceConverterTests
     }
 
     [Test]
-    public void 非アクティブ時のconverterはDoNothingを返す()
+    public void 可視近傍に無い動画は画像更新しない()
+    {
+        UpperTabActivationGate.UpdatePreferredMoviePathKeys(
+            [QueueDbPathResolver.CreateMoviePathKey(Path.Combine("movies", "visible.mp4"))]
+        );
+
+        bool actual = UpperTabActivationGate.ShouldApplyImageUpdate(
+            true,
+            Path.Combine("movies", "hidden.mp4")
+        );
+
+        Assert.That(actual, Is.False);
+    }
+
+    [Test]
+    public void 非アクティブ時のconverterはUnsetValueを返す()
     {
         UpperTabImageSourceConverter converter = new();
 
@@ -29,7 +58,29 @@ public sealed class UpperTabImageSourceConverterTests
             CultureInfo.InvariantCulture
         );
 
-        Assert.That(actual, Is.SameAs(Binding.DoNothing));
+        Assert.That(actual, Is.SameAs(DependencyProperty.UnsetValue));
+    }
+
+    [Test]
+    public void 可視近傍キー外の動画はconverterでもUnsetValueを返す()
+    {
+        UpperTabImageSourceConverter converter = new();
+        string visibleMoviePath = Path.Combine("movies", "visible.mp4");
+        string hiddenMoviePath = Path.Combine("movies", "hidden.mp4");
+
+        // gate 単体だけでなく converter 経路でも off-screen 抑止が効くことを固定する。
+        UpperTabActivationGate.UpdatePreferredMoviePathKeys(
+            [QueueDbPathResolver.CreateMoviePathKey(visibleMoviePath)]
+        );
+
+        object actual = converter.Convert(
+            [@"C:\thumb\hidden.jpg", true, true, hiddenMoviePath],
+            typeof(System.Windows.Media.ImageSource),
+            UpperTabDecodeProfile.SmallDecodePixelHeight,
+            CultureInfo.InvariantCulture
+        );
+
+        Assert.That(actual, Is.SameAs(DependencyProperty.UnsetValue));
     }
 
     [Test]
@@ -38,6 +89,7 @@ public sealed class UpperTabImageSourceConverterTests
     {
         UpperTabImageSourceConverter converter = new();
         string tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.png");
+        string moviePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.mp4");
 
         try
         {
@@ -48,9 +100,12 @@ public sealed class UpperTabImageSourceConverterTests
             }
 
             bitmap.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
+            UpperTabActivationGate.UpdatePreferredMoviePathKeys(
+                [QueueDbPathResolver.CreateMoviePathKey(moviePath)]
+            );
 
             object actual = converter.Convert(
-                [tempPath, true, true],
+                [tempPath, true, true, moviePath],
                 typeof(System.Windows.Media.ImageSource),
                 UpperTabDecodeProfile.GridDecodePixelHeight,
                 CultureInfo.InvariantCulture

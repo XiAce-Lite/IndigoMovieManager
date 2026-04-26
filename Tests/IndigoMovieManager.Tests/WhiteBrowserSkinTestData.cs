@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 
 namespace IndigoMovieManager.Tests;
@@ -35,14 +36,139 @@ internal static class WhiteBrowserSkinTestData
         return destinationRootPath;
     }
 
+    internal static string CreateSkinRootCopyWithCompat(
+        IEnumerable<string> fixtureNames,
+        bool rewriteHtmlAsShiftJis
+    )
+    {
+        string skinRootPath = CreateSkinRootCopy(fixtureNames, rewriteHtmlAsShiftJis);
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
+    internal static string CreateRepositorySkinRootCopyWithCompat(IEnumerable<string> skinNames)
+    {
+        string skinRootPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-wbskin-repo-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(skinRootPath);
+
+        foreach (string skinName in skinNames ?? [])
+        {
+            CopyRepositorySkinDirectory(skinName, skinRootPath);
+        }
+
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
+    internal static string CreateBuildOutputSkinRootCopyWithCompat(IEnumerable<string> skinNames)
+    {
+        string skinRootPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-wbskin-build-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(skinRootPath);
+
+        string buildSkinRootPath = FindRepositoryDirectory(
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows10.0.19041.0",
+            "skin"
+        );
+        if (string.IsNullOrWhiteSpace(buildSkinRootPath) || !Directory.Exists(buildSkinRootPath))
+        {
+            throw new DirectoryNotFoundException(
+                $"build output skin フォルダが見つかりません: {buildSkinRootPath}"
+            );
+        }
+
+        foreach (string skinName in skinNames ?? [])
+        {
+            string normalizedSkinName = skinName ?? "";
+            string sourceRootPath = Path.Combine(buildSkinRootPath, normalizedSkinName);
+            if (!Directory.Exists(sourceRootPath))
+            {
+                throw new DirectoryNotFoundException(
+                    $"build output skin が見つかりません: {sourceRootPath}"
+                );
+            }
+
+            // 実行中 build 出力の skin をそのまま複製して、real skin 読込を確認する。
+            CopyDirectory(sourceRootPath, Path.Combine(skinRootPath, normalizedSkinName));
+        }
+
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
     internal static string GetFixtureHtmlPath(string skinRootPath, string fixtureName)
     {
         string fixtureDirectoryPath = Path.Combine(skinRootPath, fixtureName);
-        string htmlPath = Directory
+        if (!Directory.Exists(fixtureDirectoryPath))
+        {
+            if (string.Equals(fixtureName, "MissingSkin", StringComparison.OrdinalIgnoreCase))
+            {
+                // changeSkin 失敗テストの sentinel は、呼び出し側の false 解決へ自然に流す。
+                return "";
+            }
+
+            throw new DirectoryNotFoundException(
+                $"fixture フォルダが見つかりません: {fixtureDirectoryPath}"
+            );
+        }
+
+        string[] htmlPaths = Directory
             .EnumerateFiles(fixtureDirectoryPath, "*.htm")
             .Concat(Directory.EnumerateFiles(fixtureDirectoryPath, "*.html"))
-            .Single();
-        return htmlPath;
+            .ToArray();
+        if (htmlPaths.Length == 1)
+        {
+            return htmlPaths[0];
+        }
+
+        string normalizedFixtureName = (fixtureName ?? "").TrimStart('#');
+        string preferredHtmPath = Path.Combine(fixtureDirectoryPath, normalizedFixtureName + ".htm");
+        if (File.Exists(preferredHtmPath))
+        {
+            return preferredHtmPath;
+        }
+
+        string preferredHtmlPath = Path.Combine(fixtureDirectoryPath, normalizedFixtureName + ".html");
+        if (File.Exists(preferredHtmlPath))
+        {
+            return preferredHtmlPath;
+        }
+
+        throw new InvalidOperationException(
+            $"html が一意に決まりません: {fixtureDirectoryPath} ({string.Join(", ", htmlPaths.Select(Path.GetFileName))})"
+        );
     }
 
     internal static void DeleteDirectorySafe(string directoryPath)
@@ -110,6 +236,66 @@ internal static class WhiteBrowserSkinTestData
                     Encoding.GetEncoding(932).GetBytes(html)
                 );
                 continue;
+            }
+
+            File.Copy(sourceFilePath, destinationFilePath, overwrite: true);
+        }
+    }
+
+    private static void CopyRepositorySkinDirectory(string skinName, string destinationRootPath)
+    {
+        string normalizedSkinName = skinName ?? "";
+        string sourceRootPath = FindRepositoryDirectory("skin", normalizedSkinName);
+        if (string.IsNullOrWhiteSpace(sourceRootPath) || !Directory.Exists(sourceRootPath))
+        {
+            throw new DirectoryNotFoundException($"repo skin が見つかりません: {sourceRootPath}");
+        }
+
+        CopyDirectory(sourceRootPath, Path.Combine(destinationRootPath, normalizedSkinName));
+    }
+
+    private static string FindRepositoryDirectory(params string[] relativeSegments)
+    {
+        string current = TestContext.CurrentContext.TestDirectory;
+        string latestMatch = "";
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            string candidate = Path.Combine([current, .. relativeSegments]);
+            if (Directory.Exists(candidate))
+            {
+                // Tests/bin 配下にも同形の候補があるため、一番上の repo 側候補を優先する。
+                latestMatch = candidate;
+            }
+
+            DirectoryInfo? parent = Directory.GetParent(current);
+            if (parent == null)
+            {
+                break;
+            }
+
+            current = parent.FullName;
+        }
+
+        return latestMatch;
+    }
+
+    private static void CopyDirectory(string sourceDirectoryPath, string destinationDirectoryPath)
+    {
+        Directory.CreateDirectory(destinationDirectoryPath);
+        foreach (
+            string sourceFilePath in Directory.EnumerateFiles(
+                sourceDirectoryPath,
+                "*",
+                SearchOption.AllDirectories
+            )
+        )
+        {
+            string relativePath = Path.GetRelativePath(sourceDirectoryPath, sourceFilePath);
+            string destinationFilePath = Path.Combine(destinationDirectoryPath, relativePath);
+            string destinationParentPath = Path.GetDirectoryName(destinationFilePath) ?? "";
+            if (!string.IsNullOrWhiteSpace(destinationParentPath))
+            {
+                Directory.CreateDirectory(destinationParentPath);
             }
 
             File.Copy(sourceFilePath, destinationFilePath, overwrite: true);

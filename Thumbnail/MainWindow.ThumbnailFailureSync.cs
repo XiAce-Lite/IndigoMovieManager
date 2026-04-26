@@ -543,6 +543,7 @@ namespace IndigoMovieManager
             _ = TryResolveMovieIdentityFromDb(record.MoviePath, out resolvedMovieId, out _);
 
             int appliedCount = 0;
+            MovieRecords updatedMovie = null;
             await Dispatcher
                 .InvokeAsync(() =>
                 {
@@ -555,10 +556,20 @@ namespace IndigoMovieManager
                         if (TryApplyThumbnailPathToMovieRecord(item, record.TabIndex, record.OutputThumbPath))
                         {
                             appliedCount++;
+                            updatedMovie ??= item;
                         }
                     }
                 }, DispatcherPriority.Normal, cts)
                 .Task.ConfigureAwait(false);
+
+            if (updatedMovie != null)
+            {
+                TryQueueExternalSkinThumbnailUpdated(
+                    updatedMovie,
+                    record.TabIndex,
+                    "thumbnail-rescue-reflect"
+                );
+            }
 
             return appliedCount > 0;
         }

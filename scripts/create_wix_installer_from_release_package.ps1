@@ -46,6 +46,22 @@ function Convert-ToThreePartVersion {
         throw "3 part へ変換できない version です: $Version"
     }
 
+    # MSI の upgrade 判定は先頭3桁だけを見るため、4桁目だけ進む公開版を入口で止める。
+    if ($parts.Length -gt 3) {
+        $tailParts = @($parts | Select-Object -Skip 3)
+        $hasNonZeroBuildTail = @(
+            $tailParts | Where-Object {
+                $parsed = 0
+                -not [int]::TryParse($_, [ref]$parsed) -or $parsed -ne 0
+            }
+        ).Count -gt 0
+
+        if ($hasNonZeroBuildTail) {
+            $productVersion = "{0}.{1}.{2}" -f $parts[0], $parts[1], $parts[2]
+            throw "installer 公開版では 4桁目だけが進む version は使えません: $Version。MSI は ProductVersion '$productVersion' までで upgrade 判定するため、例: 1.0.4.0 のように先頭3桁を上げてください。"
+        }
+    }
+
     return "{0}.{1}.{2}" -f $parts[0], $parts[1], $parts[2]
 }
 

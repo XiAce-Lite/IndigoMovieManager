@@ -11,16 +11,17 @@ namespace IndigoMovieManager
     internal sealed class ExternalSkinHostRefreshScheduler
     {
         private readonly Dispatcher dispatcher;
-        private readonly Func<int, string, Task> refreshAsync;
+        private readonly Func<int, string, string, Task> refreshAsync;
         private readonly Action<Exception> onDrainFailed;
         private bool isRefreshRunning;
         private bool isRefreshPending;
         private int currentGeneration;
         private string pendingReason = "";
+        private string pendingRequestTraceId = "";
 
         internal ExternalSkinHostRefreshScheduler(
             Dispatcher dispatcher,
-            Func<int, string, Task> refreshAsync,
+            Func<int, string, string, Task> refreshAsync,
             Action<Exception> onDrainFailed
         )
         {
@@ -31,10 +32,18 @@ namespace IndigoMovieManager
 
         internal int CurrentGeneration => currentGeneration;
 
-        internal void Queue(string reason)
+        internal void Queue(string reason, string requestTraceId = "")
         {
+            // 終了シーケンス中は新規 refresh を受け付けず、dispatcher shutdown 競合の例外を避ける。
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+            {
+                ResetPendingStateForShutdown();
+                return;
+            }
+
             isRefreshPending = true;
             pendingReason = reason ?? "";
+            pendingRequestTraceId = requestTraceId ?? "";
             currentGeneration++;
             if (isRefreshRunning)
             {
@@ -42,10 +51,17 @@ namespace IndigoMovieManager
             }
 
             isRefreshRunning = true;
-            _ = dispatcher.BeginInvoke(
-                new Action(async () => await DrainAsync()),
-                DispatcherPriority.Background
-            );
+            try
+            {
+                _ = dispatcher.BeginInvoke(
+                    new Action(async () => await DrainAsync()),
+                    DispatcherPriority.Background
+                );
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TaskCanceledException)
+            {
+                ResetPendingStateForShutdown();
+            }
         }
 
         private async Task DrainAsync()
@@ -58,7 +74,8 @@ namespace IndigoMovieManager
 
                     int generation = currentGeneration;
                     string reason = pendingReason;
-                    await refreshAsync(generation, reason);
+                    string requestTraceId = pendingRequestTraceId;
+                    await refreshAsync(generation, reason, requestTraceId);
                 }
             }
             catch (Exception ex)
@@ -70,9 +87,17 @@ namespace IndigoMovieManager
                 isRefreshRunning = false;
                 if (isRefreshPending)
                 {
-                    Queue(pendingReason);
+                    Queue(pendingReason, pendingRequestTraceId);
                 }
             }
+        }
+
+        private void ResetPendingStateForShutdown()
+        {
+            isRefreshRunning = false;
+            isRefreshPending = false;
+            pendingReason = "";
+            pendingRequestTraceId = "";
         }
     }
 }

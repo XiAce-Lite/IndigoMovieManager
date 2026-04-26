@@ -24,6 +24,7 @@ namespace IndigoMovieManager.Data
             string moviePath,
             out MainDbMovieReadItemResult result
         );
+        bool TryReadMovieTag(string dbFullPath, long movieId, out string tag);
     }
 
     internal sealed class MainDbMovieReadFacade : IMainDbMovieReadFacade
@@ -317,6 +318,31 @@ namespace IndigoMovieManager.Data
             }
 
             result = ReadMovieItem(reader);
+            return true;
+        }
+
+        public bool TryReadMovieTag(string dbFullPath, long movieId, out string tag)
+        {
+            tag = "";
+            if (string.IsNullOrWhiteSpace(dbFullPath) || movieId <= 0)
+            {
+                return false;
+            }
+
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = "select tag from movie where movie_id = @movieId limit 1";
+            command.Parameters.AddWithValue("@movieId", movieId);
+
+            object scalar = command.ExecuteScalar();
+            if (scalar == null || scalar == DBNull.Value)
+            {
+                return false;
+            }
+
+            tag = scalar.ToString() ?? "";
             return true;
         }
 

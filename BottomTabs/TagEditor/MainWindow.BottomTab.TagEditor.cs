@@ -40,7 +40,6 @@ namespace IndigoMovieManager
 
             if (TagEditorTabViewHost != null)
             {
-                TagEditorTabViewHost.RegisteredTagSearchRequested -= TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested -= TagEditorTabViewHost_RegisteredTagRemoveRequested;
                 TagEditorTabViewHost.RegisteredTagToggleRequested -= TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested -= TagEditorTabViewHost_PaletteTagToggleRequested;
@@ -48,7 +47,6 @@ namespace IndigoMovieManager
                 TagEditorTabViewHost.CustomTagAddRequested -= TagEditorTabViewHost_CustomTagAddRequested;
                 TagEditorTabViewHost.CustomTagTargetSelectionRequested -= TagEditorTabViewHost_CustomTagTargetSelectionRequested;
 
-                TagEditorTabViewHost.RegisteredTagSearchRequested += TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested += TagEditorTabViewHost_RegisteredTagRemoveRequested;
                 TagEditorTabViewHost.RegisteredTagToggleRequested += TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested += TagEditorTabViewHost_PaletteTagToggleRequested;
@@ -161,19 +159,6 @@ namespace IndigoMovieManager
             }
 
             ShowTagEditor(record);
-        }
-
-        private async void TagEditorTabViewHost_RegisteredTagSearchRequested(
-            object sender,
-            TagEditorTagActionEventArgs e
-        )
-        {
-            if (e == null || string.IsNullOrWhiteSpace(e.TagName))
-            {
-                return;
-            }
-
-            await ExecuteSearchKeywordAsync(e.TagName, true);
         }
 
         private void TagEditorTabViewHost_RegisteredTagRemoveRequested(
@@ -383,7 +368,10 @@ namespace IndigoMovieManager
                 tokens.Add(tagName);
             }
 
-            string nextKeyword = string.Join(" ", tokens);
+            string nextKeyword = TagSearchKeywordCodec.ReplaceTagFilters(
+                MainVM?.DbInfo?.SearchKeyword ?? "",
+                tokens
+            );
             await ExecuteSearchKeywordAsync(nextKeyword, true);
             ReselectTagEditorMovieIfVisible(preferredMovieId);
             RefreshTagEditorView();
@@ -412,9 +400,8 @@ namespace IndigoMovieManager
         private List<string> GetCurrentTagEditorSearchTokens()
         {
             string currentKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
-            return currentKeyword
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            return TagSearchKeywordCodec
+                .ExtractActiveTagsForUi(currentKeyword)
                 .ToList();
         }
 

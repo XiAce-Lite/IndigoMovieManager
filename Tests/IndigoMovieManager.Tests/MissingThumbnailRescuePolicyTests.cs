@@ -60,6 +60,44 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(result, Is.EqualTo(200));
     }
 
+    [Test]
+    public void ResolveMissingThumbnailRescueEntrySuppressionPlan_Watch抑止時はtriggerと文言を返す()
+    {
+        (
+            bool shouldDefer,
+            string deferredTrigger,
+            string logMessage
+        ) = MainWindow.ResolveMissingThumbnailRescueEntrySuppressionPlan(
+            "Watch",
+            @"D:\Db\Main.wb",
+            isWatchMode: true,
+            isWatchSuppressedByUi: true
+        );
+
+        Assert.That(shouldDefer, Is.True);
+        Assert.That(deferredTrigger, Is.EqualTo("missing-thumb-rescue:Watch"));
+        Assert.That(logMessage, Does.Contain("skip missing-thumb rescue by suppression"));
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailRescueEntrySuppressionPlan_Manual非抑止なら何も返さない()
+    {
+        (
+            bool shouldDefer,
+            string deferredTrigger,
+            string logMessage
+        ) = MainWindow.ResolveMissingThumbnailRescueEntrySuppressionPlan(
+            "Manual",
+            @"D:\Db\Main.wb",
+            isWatchMode: false,
+            isWatchSuppressedByUi: false
+        );
+
+        Assert.That(shouldDefer, Is.False);
+        Assert.That(deferredTrigger, Is.Empty);
+        Assert.That(logMessage, Is.Empty);
+    }
+
     [TestCase(0)]
     [TestCase(1)]
     [TestCase(2)]
@@ -338,6 +376,40 @@ public sealed class MissingThumbnailRescuePolicyTests
             result,
             Is.EqualTo(MainWindow.MissingThumbnailAutoEnqueueBlockReason.OpenRescueRequestExists)
         );
+    }
+
+    [Test]
+    public void BuildMissingThumbnailRescueScopeKey_DBとタブ番号を正規化して連結する()
+    {
+        string rawDbPath = Path.Combine(
+            Path.GetTempPath(),
+            "imm-rescue-scope",
+            "..",
+            "imm-rescue-scope",
+            "main.wb"
+        );
+        string expected = $"{Path.GetFullPath(rawDbPath).Trim().ToLowerInvariant()}|tab=4";
+
+        string result = InvokePrivateStaticString(
+            "BuildMissingThumbnailRescueScopeKey",
+            rawDbPath,
+            4
+        );
+
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void BuildMissingThumbnailRescueScopeKey_tab違いで別キーになる()
+    {
+        string dbPath = @"E:\library\main.wb";
+
+        string tab0 = InvokePrivateStaticString("BuildMissingThumbnailRescueScopeKey", dbPath, 0);
+        string tab4 = InvokePrivateStaticString("BuildMissingThumbnailRescueScopeKey", dbPath, 4);
+
+        Assert.That(tab0, Is.Not.EqualTo(tab4));
+        Assert.That(tab0, Does.EndWith("|tab=0"));
+        Assert.That(tab4, Does.EndWith("|tab=4"));
     }
 
     [Test]
@@ -1309,6 +1381,16 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(method, Is.Not.Null);
         return method.Invoke(null, [queueObj])!;
+    }
+
+    private static string InvokePrivateStaticString(string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return (string)method.Invoke(null, args)!;
     }
 
     private static Exception CreateThumbnailCreateFailureException(string failureReason)

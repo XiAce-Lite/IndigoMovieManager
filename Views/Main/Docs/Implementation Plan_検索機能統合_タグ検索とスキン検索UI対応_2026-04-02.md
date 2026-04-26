@@ -117,6 +117,7 @@
   - `FilterAndSort(...)` 呼び出し
   - `SearchCount` 反映
   - 検索実行起点の共通化
+  - 通常時は query-only 再計算、起動直後の部分ロード中だけ full reload 維持
 - 想定呼び出し元
   - WPF `SearchBox`
   - 保存済み検索条件

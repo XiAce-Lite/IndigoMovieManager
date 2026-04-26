@@ -26,14 +26,21 @@
 
     <div id="status" class="status">読み込み中...</div>
     <div id="view" class="grid"></div>
+    <div class="pager">
+      <button id="loadMoreButton" class="toolbar__button pager__button" type="button" style="display:none">続きを読み込む</button>
+    </div>
   </div>
 
   <script type="text/javascript">
-    // 今の互換ランタイムで確実に動くよう、update/find の戻りだけで画面を組み立てる。
+    // 今の互換ランタイムで確実に動くよう、update/find/getInfos の戻りだけで画面を組み立てる。
     var simpleGridState = {
       items: [],
       totalCount: 0,
-      currentKeyword: ""
+      currentKeyword: "",
+      loadingMore: false,
+      scrollPumpScheduled: false,
+      appendExhausted: false,
+      thumbPumpScheduled: false
     };
 
     function getItems(payload) {
@@ -67,7 +74,306 @@
         .replace(/"/g, "&quot;");
     }
 
-    function renderGrid() {
+    function getMovieKey(movie) {
+      return String(
+        movie.RecordKey
+        || movie.recordKey
+        || movie.MovieId
+        || movie.movieId
+        || movie.Id
+        || movie.id
+        || ""
+      );
+    }
+
+    function resolvePageSize() {
+      var candidate = Number((window.g_thumbs_limit || 0) || (wb && wb.defaultThumbLimit) || 200);
+      return isFinite(candidate) && candidate > 0 ? Math.floor(candidate) : 200;
+    }
+
+    function mergeMovieItems(baseItems, nextItems) {
+      var merged = [];
+      var indexByKey = {};
+      var i;
+
+      for (i = 0; i < baseItems.length; i += 1) {
+        var baseMovie = baseItems[i] || {};
+        var baseKey = getMovieKey(baseMovie) || ("base:" + String(i));
+        indexByKey[baseKey] = merged.length;
+        merged.push(baseMovie);
+      }
+
+      for (i = 0; i < nextItems.length; i += 1) {
+        var nextMovie = nextItems[i] || {};
+        var nextKey = getMovieKey(nextMovie) || ("next:" + String(i));
+        if (Object.prototype.hasOwnProperty.call(indexByKey, nextKey)) {
+          merged[indexByKey[nextKey]] = nextMovie;
+          continue;
+        }
+
+        indexByKey[nextKey] = merged.length;
+        merged.push(nextMovie);
+      }
+
+      return merged;
+    }
+
+    function collectAppendedItems(baseItems, nextItems) {
+      var existingKeys = {};
+      var appended = [];
+      var i;
+
+      for (i = 0; i < baseItems.length; i += 1) {
+        var baseKey = getMovieKey(baseItems[i]);
+        if (baseKey) {
+          existingKeys[baseKey] = true;
+        }
+      }
+
+      for (i = 0; i < nextItems.length; i += 1) {
+        var nextMovie = nextItems[i] || {};
+        var nextKey = getMovieKey(nextMovie);
+        if (nextKey && existingKeys[nextKey]) {
+          continue;
+        }
+
+        if (nextKey) {
+          existingKeys[nextKey] = true;
+        }
+        appended.push(nextMovie);
+      }
+
+      return appended;
+    }
+
+    function updateResultSummary() {
+      var resultCount = $("resultCount");
+      if (!resultCount) {
+        return;
+      }
+
+      var renderedCount = simpleGridState.items ? simpleGridState.items.length : 0;
+      if (simpleGridState.totalCount > renderedCount) {
+        resultCount.textContent = String(renderedCount) + " / " + String(simpleGridState.totalCount) + " items";
+        return;
+      }
+
+      resultCount.textContent = String(simpleGridState.totalCount) + " items";
+    }
+
+    function updateLoadMoreButton() {
+      var button = $("loadMoreButton");
+      if (!button) {
+        return;
+      }
+
+      var hasMore = !simpleGridState.appendExhausted && simpleGridState.items.length < simpleGridState.totalCount;
+      button.style.display = hasMore ? "inline-flex" : "none";
+      button.disabled = simpleGridState.loadingMore;
+      button.textContent = simpleGridState.loadingMore ? "読み込み中..." : "続きを読み込む";
+    }
+
+    function updateStatusText(prefix) {
+      var renderedCount = simpleGridState.items ? simpleGridState.items.length : 0;
+      var suffix = simpleGridState.totalCount > renderedCount
+        ? " (" + String(renderedCount) + " / " + String(simpleGridState.totalCount) + ")"
+        : "";
+      var baseText = simpleGridState.currentKeyword
+        ? '検索: "' + simpleGridState.currentKeyword + '"'
+        : "全件表示";
+      $("status").textContent = prefix ? (prefix + suffix) : (baseText + suffix);
+    }
+
+    function isNearGridBottom() {
+      var view = $("view");
+      if (!view) {
+        return false;
+      }
+
+      return view.scrollTop + view.clientHeight + 96 >= view.scrollHeight;
+    }
+
+    function scheduleAutoLoadMore() {
+      if (
+        simpleGridState.scrollPumpScheduled
+        || simpleGridState.loadingMore
+        || simpleGridState.appendExhausted
+      ) {
+        return;
+      }
+
+      simpleGridState.scrollPumpScheduled = true;
+      setTimeout(function () {
+        simpleGridState.scrollPumpScheduled = false;
+        if (isNearGridBottom()) {
+          loadMoreMovies();
+        }
+      }, 0);
+    }
+
+    function isThumbVisible(cardNode, view) {
+      if (!cardNode || !view) {
+        return false;
+      }
+
+      var top = Number(cardNode.offsetTop || 0);
+      var height = Number(cardNode.offsetHeight || 0);
+      var bottom = top + height;
+      var visibleTop = Number(view.scrollTop || 0) - 320;
+      var visibleBottom = Number(view.scrollTop || 0) + Number(view.clientHeight || 0) + 320;
+      return bottom >= visibleTop && top <= visibleBottom;
+    }
+
+    function hydrateVisibleThumbs() {
+      var view = $("view");
+      if (!view) {
+        return;
+      }
+
+      var pendingThumbs = view.querySelectorAll(".card__thumb[data-thumb-url]");
+      for (var i = 0; i < pendingThumbs.length; i += 1) {
+        var thumb = pendingThumbs[i];
+        var cardNode = thumb.closest ? thumb.closest(".card") : thumb.parentNode;
+        if (!isThumbVisible(cardNode, view)) {
+          continue;
+        }
+
+        var thumbUrl = thumb.getAttribute("data-thumb-url") || "";
+        if (thumbUrl) {
+          thumb.setAttribute("src", thumbUrl);
+        }
+        thumb.removeAttribute("data-thumb-url");
+      }
+
+      var loadedThumbs = view.querySelectorAll(".card__thumb[src]");
+      for (var loadedIndex = 0; loadedIndex < loadedThumbs.length; loadedIndex += 1) {
+        var loadedThumb = loadedThumbs[loadedIndex];
+        var loadedCardNode = loadedThumb.closest ? loadedThumb.closest(".card") : loadedThumb.parentNode;
+        if (isThumbVisible(loadedCardNode, view)) {
+          continue;
+        }
+
+        // 可視範囲から十分離れた thumb は、URL だけ残して src を外し、メモリ負荷を抑える。
+        var loadedThumbUrl = loadedThumb.getAttribute("src") || "";
+        if (loadedThumbUrl) {
+          loadedThumb.setAttribute("data-thumb-url", loadedThumbUrl);
+        }
+        loadedThumb.removeAttribute("src");
+      }
+
+      var cards = view.querySelectorAll(".card");
+      for (var cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
+        var cardNode = cards[cardIndex];
+        if (isThumbVisible(cardNode, view)) {
+          cardNode.classList.remove("is-distant");
+          continue;
+        }
+
+        // 可視範囲外の card は詳細本文を休ませ、必要な時だけ復帰させる。
+        cardNode.classList.add("is-distant");
+      }
+    }
+
+    function scheduleVisibleThumbHydration() {
+      if (simpleGridState.thumbPumpScheduled) {
+        return;
+      }
+
+      simpleGridState.thumbPumpScheduled = true;
+      setTimeout(function () {
+        simpleGridState.thumbPumpScheduled = false;
+        hydrateVisibleThumbs();
+      }, 0);
+    }
+
+    function updateMovieThumbUrlByRecordKey(recordKey, thumbUrl) {
+      for (var i = 0; i < simpleGridState.items.length; i += 1) {
+        var movie = simpleGridState.items[i] || {};
+        if (getMovieKey(movie) !== recordKey) {
+          continue;
+        }
+
+        movie.ThumbUrl = thumbUrl;
+        movie.thumbUrl = thumbUrl;
+        return true;
+      }
+
+      return false;
+    }
+
+    function applyThumbDiffByRecordKey(recordKey, thumbUrl) {
+      var view = $("view");
+      if (!view || !recordKey) {
+        return false;
+      }
+
+      var thumbs = view.querySelectorAll(".card__thumb");
+      var updated = false;
+      for (var i = 0; i < thumbs.length; i += 1) {
+        var thumb = thumbs[i];
+        if ((thumb.getAttribute("data-record-key") || "") !== recordKey) {
+          continue;
+        }
+
+        var cardNode = thumb.closest ? thumb.closest(".card") : thumb.parentNode;
+        if (thumb.hasAttribute("src") || isThumbVisible(cardNode, view)) {
+          thumb.setAttribute("src", thumbUrl);
+          thumb.removeAttribute("data-thumb-url");
+        } else {
+          thumb.setAttribute("data-thumb-url", thumbUrl);
+        }
+
+        updated = true;
+      }
+
+      if (!updated) {
+        return false;
+      }
+
+      // 次の再描画でも最新 thumb を維持するため、状態にも差分反映しておく。
+      updateMovieThumbUrlByRecordKey(recordKey, thumbUrl);
+      return true;
+    }
+
+    function buildCardHtml(movie) {
+      var tags = movie.Tags || movie.tags || [];
+      var tagHtml = "";
+      for (var tagIndex = 0; tagIndex < tags.length; tagIndex += 1) {
+        tagHtml += '<span class="card__tag">' + escapeHtml(tags[tagIndex]) + "</span>";
+      }
+
+      return ''
+        + '<button class="card' + (movie.Selected ? " is-selected" : "") + '"'
+        + ' data-record-key="' + escapeHtml(getMovieKey(movie)) + '"'
+        + ' type="button" onclick="focusMovie(' + Number(movie.MovieId || movie.movieId || 0) + ')">'
+        +   '<div class="card__thumbWrap">'
+        +     '<img class="card__thumb' + (movie.Exists === false ? " is-missing" : "") + '"'
+        +       ' data-record-key="' + escapeHtml(getMovieKey(movie)) + '"'
+        +       ' loading="lazy" decoding="async"'
+        +       ' data-thumb-url="' + escapeHtml(movie.ThumbUrl || movie.thumbUrl || "") + '"'
+        +       ' alt="' + escapeHtml(movie.MovieName || movie.movieName || "") + '">'
+        +   '</div>'
+        +   '<div class="card__body">'
+        +     '<div class="card__title">' + escapeHtml(movie.MovieName || movie.movieName || "") + '</div>'
+        +     '<div class="card__sub">'
+        +       '<span>' + escapeHtml(movie.Length || movie.length || "") + '</span>'
+        +       '<span>score ' + escapeHtml(movie.Score || movie.score || 0) + '</span>'
+        +     '</div>'
+        +     '<div class="card__tags">' + tagHtml + '</div>'
+        +   '</div>'
+        + '</button>';
+    }
+
+    function buildGridHtml(items) {
+      var html = "";
+      for (var i = 0; i < items.length; i += 1) {
+        html += buildCardHtml(items[i] || {});
+      }
+
+      return html;
+    }
+
+    function renderGrid(appendItems) {
       var view = $("view");
       if (!view) {
         return;
@@ -75,55 +381,58 @@
 
       if (!simpleGridState.items || simpleGridState.items.length < 1) {
         view.innerHTML = '<div class="empty">対象がありません。</div>';
-        $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+        updateResultSummary();
+        updateLoadMoreButton();
         return;
       }
 
-      var html = "";
-      for (var i = 0; i < simpleGridState.items.length; i += 1) {
-        var movie = simpleGridState.items[i] || {};
-        var tags = movie.Tags || movie.tags || [];
-        var tagHtml = "";
-        for (var tagIndex = 0; tagIndex < tags.length; tagIndex += 1) {
-          tagHtml += '<span class="card__tag">' + escapeHtml(tags[tagIndex]) + "</span>";
-        }
-
-        html += ''
-          + '<button class="card' + (movie.Selected ? " is-selected" : "") + '"'
-          + ' type="button" onclick="focusMovie(' + Number(movie.MovieId || movie.movieId || 0) + ')">'
-          +   '<div class="card__thumbWrap">'
-          +     '<img class="card__thumb' + (movie.Exists === false ? " is-missing" : "") + '"'
-          +       ' src="' + escapeHtml(movie.ThumbUrl || movie.thumbUrl || "") + '"'
-          +       ' alt="' + escapeHtml(movie.MovieName || movie.movieName || "") + '">'
-          +   '</div>'
-          +   '<div class="card__body">'
-          +     '<div class="card__title">' + escapeHtml(movie.MovieName || movie.movieName || "") + '</div>'
-          +     '<div class="card__sub">'
-          +       '<span>' + escapeHtml(movie.Length || movie.length || "") + '</span>'
-          +       '<span>score ' + escapeHtml(movie.Score || movie.score || 0) + '</span>'
-          +     '</div>'
-          +     '<div class="card__tags">' + tagHtml + '</div>'
-          +   '</div>'
-          + '</button>';
+      // 追記だけで済む時は既存 DOM を残し、一覧全体の再構築を避ける。
+      if (appendItems && appendItems.length > 0 && view.querySelector(".card")) {
+        view.insertAdjacentHTML("beforeend", buildGridHtml(appendItems));
+      } else if (!appendItems) {
+        view.innerHTML = buildGridHtml(simpleGridState.items);
       }
-
-      view.innerHTML = html;
-      $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+      updateResultSummary();
+      updateLoadMoreButton();
+      scheduleVisibleThumbHydration();
+      scheduleAutoLoadMore();
     }
 
-    function applyResponse(payload) {
-      simpleGridState.items = getItems(payload);
-      simpleGridState.totalCount = getTotalCount(payload);
-      renderGrid();
-      $("status").textContent = simpleGridState.currentKeyword
-        ? '検索: "' + simpleGridState.currentKeyword + '"'
-        : "全件表示";
+    function applyResponse(payload, appendMode) {
+      var nextItems = getItems(payload);
+      var appendRenderItems = null;
+      if (appendMode) {
+        var baseItems = simpleGridState.items || [];
+        var previousCount = baseItems.length;
+        var mergedItems = mergeMovieItems(baseItems, nextItems);
+        appendRenderItems = collectAppendedItems(baseItems, nextItems);
+        // 追加要求なのに件数が増えない時は、空振りとして次回要求を止める。
+        simpleGridState.appendExhausted = mergedItems.length <= previousCount;
+        simpleGridState.items = mergedItems;
+        if (!simpleGridState.appendExhausted) {
+          var isPureAppend = previousCount + appendRenderItems.length === mergedItems.length;
+          appendRenderItems = isPureAppend ? appendRenderItems : null;
+        } else {
+          appendRenderItems = [];
+        }
+      } else {
+        simpleGridState.items = nextItems;
+        simpleGridState.appendExhausted = false;
+      }
+      simpleGridState.totalCount = Math.max(getTotalCount(payload), simpleGridState.items.length);
+      if (simpleGridState.appendExhausted) {
+        simpleGridState.totalCount = simpleGridState.items.length;
+      }
+      renderGrid(appendRenderItems);
+      updateStatusText("");
     }
 
     function refreshMovies() {
+      simpleGridState.loadingMore = false;
+      updateLoadMoreButton();
       $("status").textContent = "読み込み中...";
-      return wb.update(0, 240).then(function (payload) {
-        applyResponse(payload);
+      return wb.update(0).then(function (payload) {
+        applyResponse(payload, false);
         return payload;
       }).catch(function (error) {
         $("status").textContent = "読み込み失敗";
@@ -142,14 +451,50 @@
         return refreshMovies();
       }
 
-      return wb.find(simpleGridState.currentKeyword, 0, 240).then(function (payload) {
-        applyResponse(payload);
+      return wb.find(simpleGridState.currentKeyword, 0).then(function (payload) {
+        applyResponse(payload, false);
         return payload;
       }).catch(function (error) {
         $("status").textContent = "検索失敗";
         if (wb.trace) {
           wb.trace("SimpleGridWB find failed: " + error.message);
         }
+      });
+    }
+
+    function loadMoreMovies() {
+      if (
+        simpleGridState.loadingMore
+        || simpleGridState.appendExhausted
+        || simpleGridState.items.length >= simpleGridState.totalCount
+      ) {
+        return Promise.resolve(false);
+      }
+
+      simpleGridState.loadingMore = true;
+      updateLoadMoreButton();
+      $("status").textContent = "続きを読み込み中...";
+
+      var remainingCount = Math.max(0, simpleGridState.totalCount - simpleGridState.items.length);
+      var requestCount = Math.max(1, Math.min(resolvePageSize(), remainingCount || resolvePageSize()));
+
+      // いま見えている結果順を保ったまま、続きだけを追加で取りに行く。
+      return wb.getInfos(simpleGridState.items.length, requestCount).then(function (payload) {
+        applyResponse(payload, true);
+        return true;
+      }).catch(function (error) {
+        $("status").textContent = "追加読み込み失敗";
+        if (wb.trace) {
+          wb.trace("SimpleGridWB getInfos failed: " + error.message);
+        }
+        return false;
+      }).then(function (succeeded) {
+        simpleGridState.loadingMore = false;
+        updateLoadMoreButton();
+        if (succeeded) {
+          updateStatusText("");
+        }
+        return succeeded;
       });
     }
 
@@ -173,6 +518,14 @@
       $("reloadButton").onclick = function () {
         refreshMovies();
       };
+      $("loadMoreButton").onclick = function () {
+        loadMoreMovies();
+      };
+      // 見えている末尾まで来た時は、ボタンを押さなくても次ページを継ぎ足す。
+      $("view").onscroll = function () {
+        scheduleVisibleThumbHydration();
+        scheduleAutoLoadMore();
+      };
       $("searchInput").onkeydown = function (event) {
         if (event.key === "Enter") {
           executeSearch();
@@ -191,7 +544,12 @@
 
     // compat 側から onUpdate が飛んでも描画が崩れないよう、同じ反映関数へ寄せる。
     function onUpdate(payload) {
-      applyResponse(payload);
+      applyResponse(payload, false);
+    }
+
+    // サムネ差し替えは一覧全体を描き直さず、対象 thumb だけを差分更新する。
+    function onUpdateThum(recordKey, thumbUrl) {
+      return applyThumbDiffByRecordKey(String(recordKey || ""), String(thumbUrl || ""));
     }
 
     document.addEventListener("DOMContentLoaded", function () {

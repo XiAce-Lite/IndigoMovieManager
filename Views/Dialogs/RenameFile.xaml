@@ -7,8 +7,8 @@
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Title="ファイル名変更"
-    Width="400"
-    Height="210"
+    Width="620"
+    Height="308"
     d:DataContext="{d:DesignInstance Type=local:MovieRecords}"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
@@ -34,7 +34,7 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
-    <Grid>
+    <Grid Margin="0,0,0,8">
         <materialDesign:ColorZone />
         <StackPanel Orientation="Vertical">
             <StackPanel Margin="5,0,0,0">
@@ -49,27 +49,32 @@
                     d:Text="変更前の名前.mp4"
                     FontSize="14"
                     Foreground="Gray"
+                    TextWrapping="Wrap"
                     Text="{Binding Movie_Name}" />
             </StackPanel>
-            <StackPanel
-                Margin="6,2,6,6"
-                Orientation="Horizontal"
-                RenderTransformOrigin="0.5,0.5"
-                ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <Grid
+                Margin="14,2,14,6"
+                RenderTransformOrigin="0.5,0.5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="110" />
+                </Grid.ColumnDefinitions>
                 <TextBox
                     x:Name="FileNameEditBox"
-                    Width="249"
-                    Height="34"
-                    Margin="8,0,4,0"
-                    Padding="4,4,4,4"
-                    HorizontalAlignment="Left"
+                    Grid.Column="0"
+                    Height="88"
+                    Margin="0,0,8,0"
+                    Padding="6,6,6,6"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Top"
                     GotFocus="FileNameEditBox_GotFocus"
                     materialDesign:HintAssist.Hint="変更後の名前"
                     materialDesign:TextFieldAssist.HasOutlinedTextField="True"
                     materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
                     BorderThickness="2,2,2,2"
                     FontSize="14"
-                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                     Style="{StaticResource TextBoxHasError}"
                     TabIndex="1"
                     TextWrapping="Wrap"
@@ -88,11 +93,12 @@
                 </TextBox>
                 <TextBox
                     x:Name="ExtEditBox"
-                    Width="78"
-                    Height="34"
-                    Margin="0,0,8,0"
-                    Padding="4,4,4,4"
-                    HorizontalAlignment="Right"
+                    Grid.Column="1"
+                    Height="46"
+                    Margin="0,0,0,0"
+                    Padding="6,6,6,6"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Top"
                     GotFocus="ExtEditBox_GotFocus"
                     materialDesign:HintAssist.Hint="拡張子"
                     materialDesign:TextFieldAssist.HasOutlinedTextField="True"
@@ -117,10 +123,10 @@
                         <SolidColorBrush Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
                     </TextBox.BorderBrush>
                 </TextBox>
-            </StackPanel>
+            </Grid>
             <StackPanel
                 Width="210"
-                Margin="0,10,0,20"
+                Margin="0,14,12,0"
                 HorizontalAlignment="Right"
                 Orientation="Horizontal">
                 <Button

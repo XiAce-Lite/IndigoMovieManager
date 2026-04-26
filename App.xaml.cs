@@ -145,6 +145,9 @@ namespace IndigoMovieManager
         {
             base.OnStartup(e);
 
+            // 補助 overlay window が一瞬残っても、MainWindow close を終了条件として固定する。
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
+
             // WPF 内部の SetWin32Timer 失敗だけは、ログと機能縮退へ逃がして本体クラッシュを防ぐ。
             DispatcherUnhandledException += OnDispatcherUnhandledException;
 
@@ -217,13 +220,22 @@ namespace IndigoMovieManager
                 );
             }
 
-            if (stackTrace.Contains(DispatcherSetWin32TimerStackMarker, StringComparison.Ordinal))
-            {
-                return true;
-            }
+            bool isSetWin32TimerPath = stackTrace.Contains(
+                DispatcherSetWin32TimerStackMarker,
+                StringComparison.Ordinal
+            );
+            bool isDispatcherTimerStartPath = stackTrace.Contains(
+                DispatcherTimerStartStackMarker,
+                StringComparison.Ordinal
+            );
+            bool isMediaContextCommitPath = stackTrace.Contains(
+                MediaContextCommitStackMarker,
+                StringComparison.Ordinal
+            );
 
-            return stackTrace.Contains(DispatcherTimerStartStackMarker, StringComparison.Ordinal)
-                && stackTrace.Contains(MediaContextCommitStackMarker, StringComparison.Ordinal);
+            // SetWin32Timer という名前だけでは広すぎるため、DispatcherTimer 経路まで見えている時だけ握る。
+            return (isSetWin32TimerPath && isDispatcherTimerStartPath)
+                || (isDispatcherTimerStartPath && isMediaContextCommitPath);
         }
 
         private static void LogKnownDispatcherTimerWin32Exception(Exception exception)

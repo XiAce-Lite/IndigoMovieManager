@@ -99,17 +99,22 @@ namespace IndigoMovieManager.Skin.Runtime
 
         public Task ResolveRequestAsync(string messageId, object payload)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.resolve", messageId, payload);
+            return ExecuteCompatDispatchAsync("resolve", messageId, payload);
         }
 
         public Task RejectRequestAsync(string messageId, string errorMessage)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.reject", messageId, errorMessage ?? "");
+            return ExecuteCompatDispatchAsync("reject", messageId, errorMessage ?? "");
         }
 
         public Task DispatchCallbackAsync(string callbackName, object payload)
         {
-            return ExecuteCompatDispatchAsync("__immWbCompat.dispatchCallback", callbackName, payload);
+            return ExecuteCompatDispatchAsync("dispatchCallback", callbackName, payload);
+        }
+
+        public Task HandleSkinLeaveAsync()
+        {
+            return ExecuteCompatDispatchAsync("handleSkinLeave");
         }
 
         public void RegisterExternalThumbnailPath(string thumbPath)
@@ -243,14 +248,20 @@ namespace IndigoMovieManager.Skin.Runtime
             e.Response = CreateThumbnailResponse(thumbPath);
         }
 
-        private Task ExecuteCompatDispatchAsync(string functionPath, params object[] arguments)
+        private Task ExecuteCompatDispatchAsync(string functionName, params object[] arguments)
         {
+            if (string.IsNullOrWhiteSpace(functionName))
+            {
+                return Task.CompletedTask;
+            }
+
             string serializedArguments = string.Join(
                 ", ",
                 arguments.Select(argument => JsonSerializer.Serialize(argument))
             );
+            // __immWbCompat が壊れていても、固定 alias 側へ落として pending 解決を守る。
             string script =
-                $"if (window.{functionPath}) window.{functionPath}({serializedArguments});";
+                $"(() => {{ const name = {JsonSerializer.Serialize(functionName)}; const primary = window.__immWbCompat; const alias = window.__immWbCompatBridge; const bridge = primary && typeof primary[name] === 'function' ? primary : alias; if (bridge && typeof bridge[name] === 'function') {{ bridge[name]({serializedArguments}); }} }})();";
             return ExecuteScriptAsync(script);
         }
 

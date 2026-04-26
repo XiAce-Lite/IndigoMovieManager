@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager
@@ -45,15 +46,73 @@ namespace IndigoMovieManager
         /// <summary>
         /// 画像やカスタム枠がカチッとクリックされた時！クリックされた場所を覚えつつ、そのデータをリストの「現在の選択」とシンクロさせる絆の処理！🤝
         /// </summary>
-        private void Label_MouseDown(object sender, MouseButtonEventArgs e)
+        private async void Label_MouseDown(object sender, MouseButtonEventArgs e)
         {
             if (sender is Label label && label.DataContext is MovieRecords record)
             {
+                lbClickPoint = e.GetPosition(label);
+
+                if (
+                    e.ChangedButton == MouseButton.Left
+                    && TabPlayer?.IsSelected == true
+                )
+                {
+                    SelectPlayerThumbnailRecordWithoutScroll(label, record);
+                    await OpenMovieInPlayerTabAsync(
+                        record,
+                        0,
+                        playImmediately: true,
+                        mute: false,
+                        focusTimeSlider: false
+                    );
+                    return;
+                }
+
                 // 画像クリック時の選択同期は、現在前面にいる通常タブ helper へ寄せる
                 SelectCurrentUpperTabMovieRecord(record);
                 // 後続のドラッグ＆ドロップ判定などに使うため、クリックした座標を保存
-                lbClickPoint = e.GetPosition(label);
             }
+        }
+
+        // プレーヤータブ内のクリックは現在スクロール位置を守り、選択だけを同期する。
+        private void SelectPlayerThumbnailRecordWithoutScroll(Label label, MovieRecords record)
+        {
+            ListView sourceList = FindVisualAncestor<ListView>(label);
+
+            _suppressPlayerThumbnailSelectionChanged = true;
+            try
+            {
+                if (sourceList != null)
+                {
+                    sourceList.SelectedItem = record;
+                }
+
+                SyncPlayerThumbnailSelectionAcrossViews(sourceList, record);
+            }
+            finally
+            {
+                _suppressPlayerThumbnailSelectionChanged = false;
+            }
+
+            ShowExtensionDetail(record);
+            ShowTagEditor(record);
+        }
+
+        private static T FindVisualAncestor<T>(DependencyObject source)
+            where T : DependencyObject
+        {
+            DependencyObject current = source;
+            while (current != null)
+            {
+                if (current is T typed)
+                {
+                    return typed;
+                }
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return null;
         }
 
         /// <summary>

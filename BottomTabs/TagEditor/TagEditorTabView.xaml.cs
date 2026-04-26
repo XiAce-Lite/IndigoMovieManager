@@ -13,7 +13,6 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
     {
         private const double VerticalLayoutThreshold = 1180;
 
-        public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagSearchRequested;
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagRemoveRequested;
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagToggleRequested;
         public event EventHandler<TagEditorTagActionEventArgs> PaletteTagToggleRequested;
@@ -112,11 +111,6 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             }
 
             PaletteTagAddRequested?.Invoke(this, new TagEditorTagActionEventArgs(tagName));
-        }
-
-        private void RegisteredTagSearchButton_Click(object sender, RoutedEventArgs e)
-        {
-            RaiseTagEvent(RegisteredTagSearchRequested, (sender as FrameworkElement)?.DataContext);
         }
 
         private void RegisteredTagRemoveConfirmButton_Click(object sender, RoutedEventArgs e)

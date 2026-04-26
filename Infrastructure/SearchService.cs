@@ -10,6 +10,48 @@ namespace IndigoMovieManager.Infrastructure
     /// </summary>
     public static class SearchService
     {
+        public static bool IsDuplicateSearchKeyword(string searchKeyword)
+        {
+            if (string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            string searchText = searchKeyword.Trim();
+            if (!(searchText.StartsWith('{') && searchText.EndsWith('}')))
+            {
+                return false;
+            }
+
+            string inner = searchText[1..^1].Trim();
+            return inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase);
+        }
+
+        public static bool IsTagOnlySearchKeyword(string searchKeyword)
+        {
+            if (string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            string searchText = searchKeyword.Trim();
+            if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
+            {
+                return true;
+            }
+
+            if (searchText.StartsWith('{') && searchText.EndsWith('}'))
+            {
+                string inner = searchText[1..^1].Trim();
+                if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return TagSearchKeywordCodec.TryParsePureTagQuery(searchText, out _);
+        }
+
         public static IEnumerable<MovieRecords> FilterMovies(
             IEnumerable<MovieRecords> source,
             string searchKeyword
@@ -23,18 +65,27 @@ namespace IndigoMovieManager.Infrastructure
 
             var searchText = searchKeyword.Trim();
 
-            // タグ専用構文は通常検索へ混ぜず、先にここで受け止める。
-            if (TryFilterTagQuery(query, searchText, out IEnumerable<MovieRecords> tagResult))
+            // exact tag 構文は通常検索と共存できるよう、先にタグ条件だけ抜き出す。
+            query = ApplyExactTagFilters(query, searchText, out string remainingSearchText);
+            if (!ReferenceEquals(query, source) && string.IsNullOrWhiteSpace(remainingSearchText))
             {
-                return tagResult;
+                return query;
             }
+
+            searchText = remainingSearchText;
 
             // 全体をクォートした時は、既存どおりフレーズ一致で扱う。
             if (TryGetQuotedPhrase(searchText, out string exact))
             {
+                StringComparison comparison = ResolveSearchComparison(exact);
+                bool useAsciiFastPath = comparison == StringComparison.OrdinalIgnoreCase;
                 return query.Where(item =>
-                    BuildSearchFields(item).Any(field =>
-                        field.Contains(exact, StringComparison.CurrentCultureIgnoreCase)
+                    ContainsInAnyField(
+                        useAsciiFastPath
+                            ? item.GetAsciiSearchFieldsForFilter()
+                            : item.GetSearchFieldsForFilter(),
+                        exact,
+                        comparison
                     )
                 );
             }
@@ -46,78 +97,52 @@ namespace IndigoMovieManager.Infrastructure
 
                 if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    return query.Where(item => !BuildNormalizedTags(item).Any());
+                    return query.Where(item => item.GetNormalizedTagsForFilter().Length == 0);
                 }
 
                 if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    var duplicateHashes = query
-                        .GroupBy(item => item.Hash)
-                        .Where(group => !string.IsNullOrEmpty(group.Key) && group.Count() > 1)
-                        .Select(group => group.Key)
-                        .ToHashSet();
-                    return query.Where(item => duplicateHashes.Contains(item.Hash));
+                    return FilterDuplicateMovies(query);
                 }
             }
 
             // 通常検索は OR -> AND -> NOT の順で既存仕様を保つ。
-            var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
+            SearchTerm[][] orGroups = CompileOrGroups(searchText);
             return query.Where(item =>
             {
-                string[] fields = BuildSearchFields(item);
+                bool useAsciiFastPath = ShouldUseAsciiSearchFieldFastPath(orGroups);
+                string[] fields = useAsciiFastPath
+                    ? item.GetAsciiSearchFieldsForFilter()
+                    : item.GetSearchFieldsForFilter();
 
-                return orGroups.Any(group =>
-                {
-                    var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    return andTerms.All(term =>
-                    {
-                        if (term.StartsWith('-'))
-                        {
-                            var keyword = term[1..];
-                            return fields.All(field =>
-                                !field.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
-                            );
-                        }
-
-                        return fields.Any(field =>
-                            field.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-                        );
-                    });
-                });
+                return MatchesAnyOrGroup(fields, orGroups);
             });
         }
 
-        private static bool TryFilterTagQuery(
+        private static IEnumerable<MovieRecords> ApplyExactTagFilters(
             IEnumerable<MovieRecords> query,
             string searchText,
-            out IEnumerable<MovieRecords> result
+            out string remainingSearchText
         )
         {
+            remainingSearchText = searchText ?? "";
+
             if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
             {
-                result = query.Where(item => !BuildNormalizedTags(item).Any());
-                return true;
+                remainingSearchText = "";
+                return query.Where(item => item.GetNormalizedTagsForFilter().Length == 0);
             }
 
-            if (!searchText.StartsWith("!tag:", StringComparison.CurrentCultureIgnoreCase))
+            string[] tagKeywords = TagSearchKeywordCodec.ExtractActiveTags(searchText);
+            if (tagKeywords.Length == 0)
             {
-                result = Enumerable.Empty<MovieRecords>();
-                return false;
+                return query;
             }
 
-            string tagKeyword = Unquote(searchText[5..].Trim());
-            if (string.IsNullOrWhiteSpace(tagKeyword))
-            {
-                result = Enumerable.Empty<MovieRecords>();
-                return true;
-            }
-
-            result = query.Where(item =>
-                BuildNormalizedTags(item).Any(tag =>
-                    tag.Equals(tagKeyword, StringComparison.CurrentCultureIgnoreCase)
-                )
+            remainingSearchText = TagSearchKeywordCodec.ReplaceTagFilters(searchText, Array.Empty<string>());
+            return query.Where(item =>
+                HasAllExactTags(item.GetNormalizedTagsForFilter(), tagKeywords)
             );
-            return true;
         }
 
         private static bool TryGetQuotedPhrase(string searchText, out string exact)
@@ -139,76 +164,210 @@ namespace IndigoMovieManager.Infrastructure
             return true;
         }
 
-        private static string[] BuildSearchFields(MovieRecords item)
+        private static SearchTerm[][] CompileOrGroups(string searchText)
         {
-            string kana = ResolveSearchKana(item);
-            string katakanaKana = JapaneseKanaProvider.ConvertToKatakana(kana);
-            string roma = ResolveSearchRoma(item, kana);
+            string[] tokens = TagSearchKeywordCodec.TokenizeRemainingQuery(searchText);
+            if (tokens.Length == 0)
+            {
+                return [];
+            }
 
-            return
-            [
-                item?.Movie_Name ?? "",
-                item?.Movie_Path ?? "",
-                item?.Tags ?? "",
-                item?.Comment1 ?? "",
-                item?.Comment2 ?? "",
-                item?.Comment3 ?? "",
-                kana,
-                katakanaKana,
-                roma,
-            ];
+            List<SearchTerm[]> groups = [];
+            List<SearchTerm> currentGroup = [];
+            foreach (string token in tokens)
+            {
+                if (token == "|")
+                {
+                    if (currentGroup.Count > 0)
+                    {
+                        groups.Add(currentGroup.ToArray());
+                        currentGroup.Clear();
+                    }
+
+                    continue;
+                }
+
+                currentGroup.Add(CompileTerm(token));
+            }
+
+            if (currentGroup.Count > 0)
+            {
+                groups.Add(currentGroup.ToArray());
+            }
+
+            return groups.Count == 0 ? [] : groups.ToArray();
         }
 
-        private static string ResolveSearchKana(MovieRecords item)
+        private static SearchTerm CompileTerm(string token)
         {
-            if (!string.IsNullOrWhiteSpace(item?.Kana))
-            {
-                return JapaneseKanaProvider.NormalizeToHiragana(item.Kana);
-            }
+            bool isNegative = token.StartsWith('-');
+            string normalizedToken = isNegative ? token[1..] : token;
+            bool isQuoted = TryGetQuotedPhrase(normalizedToken, out string exactTerm);
 
-            if (item == null)
-            {
-                return "";
-            }
-
-            return JapaneseKanaProvider.GetKana(item.Movie_Name, item.Movie_Path);
+            return new SearchTerm(
+                isQuoted ? exactTerm : normalizedToken,
+                isNegative,
+                isQuoted,
+                ResolveSearchComparison(isQuoted ? exactTerm : normalizedToken)
+            );
         }
 
-        private static string ResolveSearchRoma(MovieRecords item, string kana)
+        private static bool MatchesAnyOrGroup(string[] fields, SearchTerm[][] orGroups)
         {
-            if (!string.IsNullOrWhiteSpace(item?.Roma))
+            foreach (SearchTerm[] group in orGroups)
             {
-                return item.Roma;
+                if (MatchesAllTerms(fields, group))
+                {
+                    return true;
+                }
             }
 
-            if (!string.IsNullOrWhiteSpace(kana))
-            {
-                return JapaneseKanaProvider.GetRomaFromKana(kana);
-            }
-
-            if (item == null)
-            {
-                return "";
-            }
-
-            return JapaneseKanaProvider.GetRoma(item.Movie_Name, item.Movie_Path);
+            return false;
         }
 
-        private static string[] BuildNormalizedTags(MovieRecords item)
+        private static bool MatchesAllTerms(string[] fields, SearchTerm[] group)
         {
-            return TagTextParser.SplitDistinct(item?.Tags, StringComparer.CurrentCultureIgnoreCase);
-        }
-
-        private static string Unquote(string text)
-        {
-            if (text.Length < 2)
+            foreach (SearchTerm term in group)
             {
-                return text;
+                if (string.IsNullOrWhiteSpace(term.Text))
+                {
+                    continue;
+                }
+
+                bool isMatched = term.IsNegative
+                    ? ContainsInNoField(fields, term.Text, term.Comparison)
+                    : ContainsInAnyField(fields, term.Text, term.Comparison);
+                if (!isMatched)
+                {
+                    return false;
+                }
             }
 
-            bool isDoubleQuoted = text.StartsWith('"') && text.EndsWith('"');
-            bool isSingleQuoted = text.StartsWith('\'') && text.EndsWith('\'');
-            return isDoubleQuoted || isSingleQuoted ? text[1..^1] : text;
+            return true;
         }
+
+        private static bool ShouldUseAsciiSearchFieldFastPath(SearchTerm[][] orGroups)
+        {
+            foreach (SearchTerm[] group in orGroups)
+            {
+                foreach (SearchTerm term in group)
+                {
+                    if (term.Comparison != StringComparison.OrdinalIgnoreCase)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return orGroups.Length > 0;
+        }
+
+        private static bool ContainsInAnyField(
+            string[] fields,
+            string text,
+            StringComparison comparison
+        )
+        {
+            foreach (string field in fields)
+            {
+                if (field.Contains(text, comparison))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsInNoField(
+            string[] fields,
+            string text,
+            StringComparison comparison
+        )
+        {
+            foreach (string field in fields)
+            {
+                if (field.Contains(text, comparison))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasAllExactTags(string[] movieTags, string[] requiredTags)
+        {
+            foreach (string requiredTag in requiredTags)
+            {
+                StringComparison comparison = ResolveSearchComparison(requiredTag);
+                bool isMatched = false;
+                foreach (string movieTag in movieTags)
+                {
+                    if (movieTag.Equals(requiredTag, comparison))
+                    {
+                        isMatched = true;
+                        break;
+                    }
+                }
+
+                if (!isMatched)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static IEnumerable<MovieRecords> FilterDuplicateMovies(IEnumerable<MovieRecords> query)
+        {
+            List<MovieRecords> materialized = query as List<MovieRecords> ?? query.ToList();
+            Dictionary<string, int> hashCounts = [];
+
+            foreach (MovieRecords item in materialized)
+            {
+                if (string.IsNullOrEmpty(item?.Hash))
+                {
+                    continue;
+                }
+
+                hashCounts.TryGetValue(item.Hash, out int currentCount);
+                hashCounts[item.Hash] = currentCount + 1;
+            }
+
+            return materialized.Where(item =>
+                !string.IsNullOrEmpty(item?.Hash)
+                && hashCounts.TryGetValue(item.Hash, out int count)
+                && count > 1
+            );
+        }
+
+        // ASCII だけの検索語は culture 比較より ordinal ignore case の方が軽い。
+        // 日本語などを含む語は従来どおり culture 比較を維持して互換性を守る。
+        private static StringComparison ResolveSearchComparison(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return StringComparison.CurrentCultureIgnoreCase;
+            }
+
+            foreach (char c in text)
+            {
+                if (c > sbyte.MaxValue)
+                {
+                    return StringComparison.CurrentCultureIgnoreCase;
+                }
+            }
+
+            return StringComparison.OrdinalIgnoreCase;
+        }
+
+        private readonly record struct SearchTerm(
+            string Text,
+            bool IsNegative,
+            bool IsQuoted,
+            StringComparison Comparison
+        );
     }
 }

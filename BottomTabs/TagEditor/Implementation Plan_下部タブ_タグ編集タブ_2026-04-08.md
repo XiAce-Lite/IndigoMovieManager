@@ -114,6 +114,7 @@
 - 中央 textbox の `Enter`
 - 中央 textbox 右の `+` はタグ付け対象選択ダイアログ
 - 対象選択ダイアログは 3 択で、3 つ目は一括削除
+- 一括タグ付けのタグ名解決は、単一 exact tag が入っていれば自由入力混在でもその exact tag を優先する
 - 右タグの `+`
 - どちらも `MovieRecords.Tag` / `MovieRecords.Tags` を更新
 - `UpdateTag(...)` を呼ぶ
@@ -148,6 +149,7 @@
     - `TagName`
     - `IsActive`
   - `IsActive` は「現在の検索条件に入っているか」を表す
+  - exact tag があればそれを正本にし、無い時だけ単純な 1 語タグ検索を UI 上の active とみなす
 
 ## 9. デザイン指針
 - 左は「今の動画を見る場所」

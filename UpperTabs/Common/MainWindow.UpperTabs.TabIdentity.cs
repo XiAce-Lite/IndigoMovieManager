@@ -33,6 +33,11 @@ namespace IndigoMovieManager
                 return UpperTabGridFixedIndex;
             }
 
+            if (ReferenceEquals(selectedItem, TabPlayer))
+            {
+                return PlayerTabIndex;
+            }
+
             if (ReferenceEquals(selectedItem, TabList))
             {
                 return UpperTabListFixedIndex;
@@ -85,7 +90,13 @@ namespace IndigoMovieManager
         // 通常のサムネイル一覧タブかどうかを、固定ID基準で 1 か所に寄せる。
         private static bool IsStandardUpperTabFixedIndex(int tabIndex)
         {
-            return tabIndex is >= UpperTabSmallFixedIndex and <= UpperTabBig10FixedIndex;
+            return tabIndex is
+                UpperTabSmallFixedIndex
+                or UpperTabBigFixedIndex
+                or UpperTabGridFixedIndex
+                or UpperTabListFixedIndex
+                or UpperTabBig10FixedIndex
+                or PlayerTabIndex;
         }
 
         // system.skin へ保存する互換名は、固定IDからだけ決める。
@@ -97,6 +108,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => "DefaultSmall",
                 UpperTabBigFixedIndex => "DefaultBig",
                 UpperTabGridFixedIndex => "DefaultGrid",
+                PlayerTabIndex => "DefaultGrid",
                 UpperTabListFixedIndex => "DefaultList",
                 _ => "DefaultGrid",
             };
@@ -110,6 +122,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => "DefaultSmall",
                 UpperTabBigFixedIndex => "DefaultBig",
                 UpperTabGridFixedIndex => "DefaultGrid",
+                PlayerTabIndex => "DefaultGrid",
                 UpperTabListFixedIndex => "DefaultList",
                 UpperTabBig10FixedIndex => "DefaultBig10",
                 _ => "DefaultGrid",
@@ -152,11 +165,19 @@ namespace IndigoMovieManager
 
             if (Tabs.Items.Count > 0 && ReferenceEquals(Tabs.Items[0], TabGrid))
             {
-                return;
+                if (TabPlayer == null || (Tabs.Items.Count > 1 && ReferenceEquals(Tabs.Items[1], TabPlayer)))
+                {
+                    return;
+                }
             }
 
             Tabs.Items.Remove(TabGrid);
             Tabs.Items.Insert(0, TabGrid);
+            if (TabPlayer != null)
+            {
+                Tabs.Items.Remove(TabPlayer);
+                Tabs.Items.Insert(1, TabPlayer);
+            }
         }
 
         // 固定IDから実際の TabItem を引き、UI 側の参照をここへ閉じ込める。
@@ -167,6 +188,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => TabSmall,
                 UpperTabBigFixedIndex => TabBig,
                 UpperTabGridFixedIndex => TabGrid,
+                PlayerTabIndex => TabPlayer,
                 UpperTabListFixedIndex => TabList,
                 UpperTabBig10FixedIndex => TabBig10,
                 ThumbnailErrorTabIndex => TabThumbnailError,
@@ -204,6 +226,7 @@ namespace IndigoMovieManager
                 UpperTabSmallFixedIndex => SmallList,
                 UpperTabBigFixedIndex => BigList,
                 UpperTabGridFixedIndex => GridList,
+                PlayerTabIndex => GetUpperTabPlayerList(),
                 UpperTabListFixedIndex => ListDataGrid,
                 UpperTabBig10FixedIndex => BigList10,
                 ThumbnailErrorTabIndex => GetUpperTabRescueDataGrid(),

@@ -17,6 +17,7 @@ using AvalonDock.Layout.Serialization;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Infrastructure;
+using IndigoMovieManager.Skin;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
@@ -68,10 +69,16 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollIntervalMs = 3000;
         private const int EverythingWatchPollIntervalBusyMs = 15000;
         private const int EverythingWatchPollIntervalMediumMs = 6000;
+        private const int EverythingWatchPollIntervalCalmMs = 9000;
         private const int EverythingWatchPollBusyThreshold = 200;
         private const int EverythingWatchPollMediumThreshold = 50;
+        private const int EverythingWatchPollLowUpdateThreshold = 1;
+        private const int EverythingWatchPollCalmCyclesThreshold = 3;
         private const string DockLayoutFileName = "layout.xml";
         private const string DefaultDockLayoutFileName = "layout.default.xml";
+        private const string ExtensionBottomTabContentId = "ToolExtension";
+        private const string BookmarkBottomTabContentId = "ToolBookmark";
+        private const string SavedSearchBottomTabContentId = "ToolTagBar";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
         private const string TagEditorBottomTabContentId = "ToolTagEditor";
         /// <summary>
@@ -236,6 +243,8 @@ namespace IndigoMovieManager
         private Task _everythingWatchPollTask;
         private CancellationTokenSource _everythingWatchPollCts = new();
         private int _lastEverythingPollDelayMs = EverythingWatchPollIntervalMs;
+        private int _lastEverythingPollUpdateCount;
+        private int _consecutiveCalmEverythingPollCount;
 
         private DataTable systemData;
         private DataTable movieData;
@@ -252,8 +261,8 @@ namespace IndigoMovieManager
         private DateTime _lastSliderTime = DateTime.MinValue;
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
 
-        //private DateTime _lastInputTime = DateTime.MinValue;  //インクリメントサーチで使用。一旦オミット。
         private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.5);
+        private readonly DispatcherTimer _searchInputDebounceTimer;
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -281,35 +290,22 @@ namespace IndigoMovieManager
                         ReadCurrentMainDbQueueRequestSessionStamp()
                     )
             );
+            _whiteBrowserSkinStatePersister = new WhiteBrowserSkinStatePersister(
+                _whiteBrowserSkinStatePersistChannel.Reader,
+                WhiteBrowserSkinStatePersistBatchWindowMs,
+                message => DebugRuntimeLog.Write("skin-db", message)
+            );
+            _whiteBrowserSkinStatePersisterTask = RunWhiteBrowserSkinStatePersisterSupervisorAsync(
+                _whiteBrowserSkinStatePersisterCts.Token
+            );
 
             //前のバージョンのプロパティを引き継ぐぜ。
             Properties.Settings.Default.Upgrade();
             InitializeDetailThumbnailModeRuntime();
             ApplyThumbnailGpuDecodeSetting();
             ApplyThumbnailFfmpegEcoSetting();
-
-            //イニシャライズの前に、systemテーブルを読み込んで、前回スキン(タブ)を取得する。
-            if (Properties.Settings.Default.AutoOpen)
-            {
-                if (Properties.Settings.Default.LastDoc != null)
-                {
-                    if (Path.Exists(Properties.Settings.Default.LastDoc))
-                    {
-                        // ここでは表示設定だけ先読みし、DB本体の切替はOpenDatafile成功時にだけ行う。
-                        if (
-                            TryValidateMainDatabaseSchema(
-                                Properties.Settings.Default.LastDoc,
-                                out _
-                            )
-                        )
-                        {
-                            //Tabとソートを取得するだけの為に、MovieRecordsを取得する前にやってる。
-                            //初回だけはMainWindow_ContentRenderedの処理と重複するかな。
-                            GetSystemTable(Properties.Settings.Default.LastDoc);
-                        }
-                    }
-                }
-            }
+            // 起動前の同期DB読込は避け、最低限の既定値だけ先に入れて初回描画を優先する。
+            ApplyColdStartSystemDefaults();
             recentFiles.Clear();
 
             InitializeComponent();
@@ -329,6 +325,7 @@ namespace IndigoMovieManager
             SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             SourceInitialized += (_, _) =>
             {
+                UpdateUiHangNotificationOwnerWindow();
                 UpdateUiHangWindowStateSnapshot();
                 UpdateUiHangNotificationPlacement();
             };
@@ -431,12 +428,15 @@ namespace IndigoMovieManager
             DataContext = MainVM;
 
             TryRestoreDockLayout();
+            EnsureRequiredBottomTabsPresent();
             InitializeExtensionTabSupport();
             InitializeBookmarkTabSupport();
             InitializeSavedSearchTabSupport();
             InitializeTagEditorTabSupport();
             InitializeDebugTabSupport();
+            InitializeLogTabSupport();
             ApplyDebugTabVisibility();
+            ApplyLogTabVisibility();
             ApplyThumbnailErrorBottomTabVisibility();
             InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
@@ -446,12 +446,16 @@ namespace IndigoMovieManager
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
             timer.Tick += new EventHandler(Timer_Tick);
+            _searchInputDebounceTimer = new DispatcherTimer { Interval = _timeInputInterval };
+            _searchInputDebounceTimer.Tick += SearchInputDebounceTimer_Tick;
 
-            //ボリュームと再生速度のスライダー初期値をセット
-            uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
+            // 保存済み音量を先に復元し、その値を内蔵プレイヤーと表示へ揃える。
+            double savedPlayerVolume = ClampPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume);
+            uxVolumeSlider.Value = savedPlayerVolume;
+            uxVideoPlayer.Volume = savedPlayerVolume;
 
             uxTime.Text = "00:00:00";
-            uxVolume.Text = ((int)(uxVolumeSlider.Value * 100)).ToString();
+            uxVolume.Text = ((int)(savedPlayerVolume * 100)).ToString();
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
@@ -462,11 +466,13 @@ namespace IndigoMovieManager
         private void MenuToggleButton_Checked(object sender, RoutedEventArgs e)
         {
             BeginWatchUiSuppression("left-drawer");
+            SetWebViewPlayerHiddenForLeftDrawer(hidden: true);
         }
 
         // 左ドロワーを閉じた時だけ、保留があれば watch を1回 catch-up させる。
         private void MenuToggleButton_Unchecked(object sender, RoutedEventArgs e)
         {
+            SetWebViewPlayerHiddenForLeftDrawer(hidden: false);
             EndWatchUiSuppression("left-drawer");
         }
 
@@ -495,7 +501,7 @@ namespace IndigoMovieManager
                         {
                             if (Properties.Settings.Default.AutoOpen)
                             {
-                                // 起動直後の初回描画を先に通し、その後でDB切替を流す。
+                                // 起動直後の初回描画を先に通し、その後で最初のDB切替・system読込を流す。
                                 _ = Dispatcher.BeginInvoke(
                                     DispatcherPriority.Background,
                                     new Action(() =>
@@ -594,16 +600,24 @@ namespace IndigoMovieManager
                 uxVideoPlayer.Stop();
                 StopDispatcherTimerSafely(timer, nameof(timer));
                 StopDispatcherTimerSafely(
+                    _searchInputDebounceTimer,
+                    nameof(_searchInputDebounceTimer)
+                );
+                StopDispatcherTimerSafely(
                     _thumbnailProgressUiTimer,
                     nameof(_thumbnailProgressUiTimer)
                 );
                 StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
+                StopDispatcherTimerSafely(_logTabRefreshTimer, nameof(_logTabRefreshTimer));
 
                 ShowUiHangShutdownStatus("終了処理: 入力受付を停止中");
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 ShowUiHangShutdownStatus("終了処理: バックグラウンド処理を停止中");
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
+                _everythingWatchPollCts.Cancel();
+                StopAndClearFileWatchers();
+                BeginWhiteBrowserSkinStatePersisterShutdown();
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "shutdown: input stop requested and thumbnail queue input disabled."
@@ -614,20 +628,27 @@ namespace IndigoMovieManager
                 );
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
-                _everythingWatchPollCts.Cancel();
                 CancelKanaBackfill("window-closing");
+                BeginWatchEventQueueShutdownForClosing();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/4): サムネイル消費タスク停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/5): サムネイル消費タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/4): サムネイル保存タスク停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/5): サムネイル保存タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/4): 監視ポーリング停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/5): skin保存タスク停止待機");
+                DrainWhiteBrowserSkinStatePersisterForShutdown();
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/5): 監視ポーリング停止待機");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/4): rescue worker を停止中");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(5/5): watch created ready停止待機");
+                // Created ready待機は queue 側と連携して短時間だけdrainし、終了境界の取りこぼしを減らす。
+                DrainWatchEventPipelinesForShutdown();
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中: rescue worker を停止中");
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "shutdown: starting rescue worker cleanup."
@@ -708,39 +729,55 @@ namespace IndigoMovieManager
         /// </summary>
         private string ValidateDockLayoutText(string layoutText)
         {
-            if (
-                !layoutText.Contains(
-                    $"ContentId=\"{ThumbnailProgressContentId}\"",
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
+            return FindMissingRequiredDockLayoutReason(
+                layoutText,
+                ShouldShowThumbnailErrorBottomTab,
+                ShouldShowDebugTab
+            );
+        }
+
+        internal static string FindMissingRequiredDockLayoutReason(
+            string layoutText,
+            bool shouldShowThumbnailErrorBottomTab,
+            bool shouldShowDebugTab
+        )
+        {
+            // 下部の常設タブは、誤って保存済みレイアウトから落ちても次回起動で救済する。
+            (string ContentId, string Reason)[] requiredTabs =
+            [
+                (ExtensionBottomTabContentId, "missing-extension-bottom-tab"),
+                (BookmarkBottomTabContentId, "missing-bookmark-bottom-tab"),
+                (SavedSearchBottomTabContentId, "missing-saved-search-bottom-tab"),
+                (ThumbnailProgressContentId, "missing-thumbnail-progress"),
+                (TagEditorBottomTabContentId, "missing-tag-editor-bottom-tab"),
+            ];
+
+            foreach ((string contentId, string reason) in requiredTabs)
             {
-                return "missing-thumbnail-progress";
+                if (
+                    !layoutText.Contains(
+                        $"ContentId=\"{contentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return reason;
+                }
             }
 
             if (
                 ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
                     layoutText,
-                    ShouldShowThumbnailErrorBottomTab
+                    shouldShowThumbnailErrorBottomTab
                 )
             )
             {
                 return "missing-thumbnail-error-bottom-tab";
             }
 
-            if (
-                !layoutText.Contains(
-                    $"ContentId=\"{TagEditorBottomTabContentId}\"",
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                return "missing-tag-editor-bottom-tab";
-            }
-
             // Debug 構成では開発用タブも必須扱いにして、古いレイアウトを引きずらない。
             if (
-                ShouldShowDebugTab
+                shouldShowDebugTab
                 && !layoutText.Contains(
                     $"ContentId=\"{DebugToolContentId}\"",
                     StringComparison.OrdinalIgnoreCase
@@ -750,7 +787,288 @@ namespace IndigoMovieManager
                 return "missing-debug-tool";
             }
 
+            if (
+                shouldShowDebugTab
+                && !layoutText.Contains(
+                    $"ContentId=\"{LogToolContentId}\"",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "missing-log-tool";
+            }
+
             return "";
+        }
+
+        // 下部の常設タブは、古いレイアウト復元や誤操作で木から外れても保存前に必ず戻す。
+        private void EnsureRequiredBottomTabsPresent()
+        {
+            LayoutAnchorablePane targetPane = ResolveActiveBottomTabPane();
+            if (targetPane == null)
+            {
+                return;
+            }
+
+            LayoutAnchorable selectedTabBeforeRepair = GetSelectedBottomTabOrNull(targetPane);
+
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                TagEditorBottomTab,
+                TagEditorBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                exDetail,
+                ExtensionBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                exBookMark,
+                BookmarkBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                TagBar,
+                SavedSearchBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                ThumbnailProgressTab,
+                ThumbnailProgressContentId,
+                canHide: false
+            );
+
+            if (ShouldShowThumbnailErrorBottomTab)
+            {
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    ThumbnailErrorBottomTab,
+                    ThumbnailErrorBottomTabContentId,
+                    canHide: false
+                );
+            }
+
+            if (ShouldShowDebugTab)
+            {
+                // Debug 系も自動非表示ペインへ流れたままにならないよう、下部ペインへ戻す。
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    DebugTab,
+                    DebugToolContentId,
+                    canHide: true
+                );
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    LogTab,
+                    LogToolContentId,
+                    canHide: true
+                );
+            }
+
+            if (
+                selectedTabBeforeRepair != null
+                && ReferenceEquals(selectedTabBeforeRepair.Parent, targetPane)
+                && !selectedTabBeforeRepair.IsHidden
+            )
+            {
+                selectedTabBeforeRepair.IsSelected = true;
+            }
+        }
+
+        private LayoutAnchorablePane ResolveActiveBottomTabPane()
+        {
+            if (uxDockingManager?.Layout?.RootPanel == null)
+            {
+                return uxAnchorablePane2;
+            }
+
+            LayoutAnchorablePane paneWithKnownContent = FindDockedPaneWithKnownBottomTab(
+                uxDockingManager.Layout.RootPanel
+            );
+            if (paneWithKnownContent != null)
+            {
+                return paneWithKnownContent;
+            }
+
+            return FindFirstDockedAnchorablePane(uxDockingManager.Layout.RootPanel) ?? uxAnchorablePane2;
+        }
+
+        private LayoutAnchorablePane FindDockedPaneWithKnownBottomTab(ILayoutContainer container)
+        {
+            if (container == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (child is LayoutAnchorablePane pane)
+                {
+                    foreach (ILayoutElement paneChild in pane.Children)
+                    {
+                        if (
+                            paneChild is LayoutAnchorable anchorable
+                            && IsKnownBottomTabContentId(anchorable.ContentId)
+                        )
+                        {
+                            return pane;
+                        }
+                    }
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorablePane found = FindDockedPaneWithKnownBottomTab(childContainer);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private LayoutAnchorablePane FindFirstDockedAnchorablePane(ILayoutContainer container)
+        {
+            if (container == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (child is LayoutAnchorablePane pane)
+                {
+                    return pane;
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorablePane found = FindFirstDockedAnchorablePane(childContainer);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsKnownBottomTabContentId(string contentId)
+        {
+            return contentId is TagEditorBottomTabContentId
+                or ExtensionBottomTabContentId
+                or BookmarkBottomTabContentId
+                or SavedSearchBottomTabContentId
+                or ThumbnailProgressContentId
+                or ThumbnailErrorBottomTabContentId
+                or DebugToolContentId
+                or LogToolContentId;
+        }
+
+        private LayoutAnchorable GetSelectedBottomTabOrNull(LayoutAnchorablePane targetPane)
+        {
+            if (targetPane == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in targetPane.Children)
+            {
+                if (child is LayoutAnchorable tab && tab.IsSelected)
+                {
+                    return tab;
+                }
+            }
+
+            return null;
+        }
+
+        private LayoutAnchorable FindLayoutAnchorableByContentId(
+            ILayoutContainer container,
+            string contentId
+        )
+        {
+            if (container == null || string.IsNullOrWhiteSpace(contentId))
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (
+                    child is LayoutAnchorable anchorable
+                    && string.Equals(
+                        anchorable.ContentId,
+                        contentId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return anchorable;
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorable found = FindLayoutAnchorableByContentId(
+                        childContainer,
+                        contentId
+                    );
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private void EnsureRequiredBottomTabPresent(
+            LayoutAnchorablePane targetPane,
+            LayoutAnchorable fallbackTab,
+            string contentId,
+            bool canHide
+        )
+        {
+            if (targetPane == null)
+            {
+                return;
+            }
+
+            LayoutAnchorable tab =
+                FindLayoutAnchorableByContentId(uxDockingManager?.Layout, contentId) ?? fallbackTab;
+            if (tab == null)
+            {
+                return;
+            }
+
+            // 保存済みレイアウトで別ペインや自動非表示へ流れても、正規の下部ペインへ戻す。
+            tab.CanClose = false;
+            tab.CanHide = canHide;
+            tab.CanDockAsTabbedDocument = false;
+
+            if (tab.Parent is ILayoutContainer currentParent && !ReferenceEquals(currentParent, targetPane))
+            {
+                currentParent.RemoveChild(tab);
+            }
+
+            if (!targetPane.Children.Contains(tab))
+            {
+                targetPane.Children.Add(tab);
+            }
+
+            if (tab.IsHidden)
+            {
+                tab.Show();
+            }
         }
 
         /// <summary>
@@ -759,6 +1077,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void SaveDockLayoutToFile(string layoutFilePath)
         {
+            EnsureRequiredBottomTabsPresent();
             XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
             using var writer = new StreamWriter(layoutFilePath);
             layoutSerializer.Serialize(writer);
@@ -878,7 +1197,8 @@ namespace IndigoMovieManager
         {
             // 起動直後の初回描画を優先するため、同期前半をUIスレッドへ残さない。
             await Task.Yield();
-
+            // poll loop の再起動時も、静穏判定は新しい起点から測り直す。
+            ResetEverythingWatchPollAdaptiveDelayState();
             while (!cts.IsCancellationRequested)
             {
                 try
@@ -887,7 +1207,7 @@ namespace IndigoMovieManager
                     {
                         MarkWatchWorkDeferredWhileSuppressed("everything-poll");
                     }
-                    else if (ShouldRunEverythingWatchPoll())
+                    else if (ShouldRunEverythingWatchPollPolicy())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
@@ -927,20 +1247,9 @@ namespace IndigoMovieManager
             try
             {
                 var queueDbService = ResolveCurrentQueueDbService();
-                if (queueDbService != null)
-                {
-                    int activeCount = queueDbService.GetActiveQueueCount(
-                        thumbnailQueueOwnerInstanceId
-                    );
-                    if (activeCount >= EverythingWatchPollBusyThreshold)
-                    {
-                        delayMs = EverythingWatchPollIntervalBusyMs;
-                    }
-                    else if (activeCount >= EverythingWatchPollMediumThreshold)
-                    {
-                        delayMs = EverythingWatchPollIntervalMediumMs;
-                    }
-                }
+                int activeCount = queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId)
+                    ?? 0;
+                delayMs = ResolveEverythingWatchPollDelayFromState(activeCount);
             }
             catch (Exception ex)
             {
@@ -955,7 +1264,9 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"everything poll interval changed: {_lastEverythingPollDelayMs} -> {delayMs}"
+                    $"everything poll interval changed: {_lastEverythingPollDelayMs} -> {delayMs} "
+                        + $"last_updates={Volatile.Read(ref _lastEverythingPollUpdateCount)} "
+                        + $"calm_cycles={Volatile.Read(ref _consecutiveCalmEverythingPollCount)}"
                 );
                 _lastEverythingPollDelayMs = delayMs;
             }
@@ -965,27 +1276,13 @@ namespace IndigoMovieManager
         /// <summary>
         /// 今Everythingポーリングをぶん回すべきか？をクールにジャッジするぜ！😎
         /// </summary>
-        private bool ShouldRunEverythingWatchPoll()
+        private bool ShouldRunEverythingWatchPollPolicy()
         {
-            if (IsStartupFeedPartialActive)
-            {
-                return false;
-            }
-
             var mode = GetEverythingIntegrationMode();
-            if (!_indexProviderFacade.IsIntegrationConfigured(mode))
-            {
-                return false;
-            }
-
+            bool isIntegrationConfigured = _indexProviderFacade.IsIntegrationConfigured(mode);
             var availability = _indexProviderFacade.CheckAvailability(mode);
             // OnモードはEverything停止中でも、filesystem fallback走査のためポーリングを止めない。
             bool keepPollingForFallback = (int)mode == 2;
-            if (!availability.CanUse && !keepPollingForFallback)
-            {
-                return false;
-            }
-
             string dbPath = MainVM.DbInfo.DBFullPath;
             if (string.IsNullOrWhiteSpace(dbPath) || !Path.Exists(dbPath))
             {
@@ -994,25 +1291,18 @@ namespace IndigoMovieManager
 
             try
             {
-                DataTable watchTable = GetData(dbPath, "select dir from watch where watch = 1");
-                if (watchTable == null)
-                {
-                    return false;
-                }
+                string[] watchFolders = GetEverythingPollEligibleWatchFoldersSnapshot(dbPath);
 
-                foreach (DataRow row in watchTable.Rows)
-                {
-                    string watchFolder = row["dir"]?.ToString() ?? "";
-                    if (!Path.Exists(watchFolder))
-                    {
-                        continue;
-                    }
-
-                    if (IsEverythingEligiblePath(watchFolder, out _))
-                    {
-                        return true;
-                    }
-                }
+                return ShouldRunEverythingWatchPollPolicy(
+                    IsStartupFeedPartialActive,
+                    isIntegrationConfigured,
+                    availability.CanUse,
+                    keepPollingForFallback,
+                    dbPath,
+                    watchFolders,
+                    Path.Exists,
+                    _ => true
+                );
             }
             catch (Exception ex)
             {
@@ -1213,31 +1503,29 @@ namespace IndigoMovieManager
         /// </summary>
         private void BootNewDb(string dbFullPath)
         {
-            MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
-            MainVM.DbInfo.DBFullPath = dbFullPath;
-            ShowUiHangDbSwitchStatus("DB切替: system 設定を読込中");
-            GetSystemTable(dbFullPath);
-            MainVM.ReplaceMovieRecs([]);
-            MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
-            filterList = [];
-            movieData = null;
-            ResetMainHeaderCounts();
-            QueueRegisteredMovieCountRefresh(dbFullPath);
-
-            ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
-            GetHistoryTable(dbFullPath);
-            ReloadSavedSearchItems();
-
-            if (MainVM.DbInfo.Skin != null)
+            using (BeginExternalSkinHostRefreshBatch("dbinfo-DBFullPath"))
             {
-                ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
-                SwitchTab(MainVM.DbInfo.Skin);
-            }
+                MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
+                MainVM.DbInfo.DBFullPath = dbFullPath;
+                ShowUiHangDbSwitchStatus("DB切替: system 設定を読込中");
+                GetSystemTable(dbFullPath);
+                MainVM.ReplaceMovieRecs([]);
+                MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
+                filterList = [];
+                movieData = null;
+                ResetMainHeaderCounts();
+                QueueRegisteredMovieCountRefresh(dbFullPath);
 
-            // 起動時のDB復元では Skin/DBFullPath の PropertyChanged だけに頼ると、
-            // タイミング次第で外部 skin host refresh が見た目へ出ないことがある。
-            // 新DB起動完了時に 1 回明示的に積み、起動復元経路でも host 切替を確実に走らせる。
-            QueueExternalSkinHostRefresh("boot-new-db");
+                ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
+                GetHistoryTable(dbFullPath);
+                ReloadSavedSearchItems();
+
+                if (MainVM.DbInfo.Skin != null)
+                {
+                    ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
+                    SwitchTab(MainVM.DbInfo.Skin);
+                }
+            }
 
             UpdateExtensionDetailVisibilityBySearchCount();
             ShowUiHangDbSwitchStatus("DB切替: 初期表示を準備中");
@@ -1265,6 +1553,18 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
+        /// DB未選択の cold start でも、初回描画に必要な既定値だけは先に揃える。
+        /// 実DBの値は ContentRendered 後の DB 切替で上書きする。
+        /// </summary>
+        private void ApplyColdStartSystemDefaults()
+        {
+            MainVM.DbInfo.Skin = "DefaultGrid";
+            MainVM.DbInfo.Sort = "1";
+            MainVM.DbInfo.ThumbFolder = "";
+            MainVM.DbInfo.BookmarkFolder = "";
+        }
+
+        /// <summary>
         /// DBのsystemテーブルから、欲しい属性の値をピンポイントで引っこ抜いてくるぜ！🎣
         /// </summary>
         public string SelectSystemTable(string attr)
@@ -1278,6 +1578,88 @@ namespace IndigoMovieManager
                 }
             }
             return "";
+        }
+
+        private void ApplyRuntimeSystemValue(string dbFullPath, string attr, string value)
+        {
+            if (
+                string.IsNullOrWhiteSpace(dbFullPath)
+                || string.IsNullOrWhiteSpace(attr)
+                || !string.Equals(
+                    MainVM?.DbInfo?.DBFullPath,
+                    dbFullPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            string normalizedAttr = attr.Trim();
+            string normalizedValue = value ?? "";
+            UpsertSystemDataRow(normalizedAttr, normalizedValue);
+
+            switch (normalizedAttr)
+            {
+                case "skin":
+                    MainVM.DbInfo.Skin = string.IsNullOrWhiteSpace(normalizedValue)
+                        ? "DefaultGrid"
+                        : normalizedValue;
+                    break;
+
+                case "sort":
+                    MainVM.DbInfo.Sort = string.IsNullOrEmpty(normalizedValue) ? "1" : normalizedValue;
+                    break;
+
+                case "thum":
+                    string dbName = string.IsNullOrWhiteSpace(MainVM.DbInfo.DBName)
+                        ? Path.GetFileNameWithoutExtension(dbFullPath) ?? ""
+                        : MainVM.DbInfo.DBName;
+                    MainVM.DbInfo.ThumbFolder = ThumbRootResolver.ResolveRuntimeThumbRoot(
+                        dbFullPath,
+                        dbName,
+                        normalizedValue
+                    );
+                    break;
+
+                case "bookmark":
+                    MainVM.DbInfo.BookmarkFolder = normalizedValue;
+                    break;
+            }
+        }
+
+        private void UpsertSystemDataRow(string attr, string value)
+        {
+            if (string.IsNullOrWhiteSpace(attr))
+            {
+                return;
+            }
+
+            if (systemData == null)
+            {
+                systemData = new DataTable();
+            }
+
+            if (!systemData.Columns.Contains("attr"))
+            {
+                systemData.Columns.Add("attr", typeof(string));
+            }
+
+            if (!systemData.Columns.Contains("value"))
+            {
+                systemData.Columns.Add("value", typeof(string));
+            }
+
+            string escapedAttr = attr.Replace("'", "''");
+            DataRow[] rows = systemData.Select($"attr='{escapedAttr}'");
+            DataRow row = rows.Length > 0 ? rows[0] : systemData.NewRow();
+            row["attr"] = attr;
+            row["value"] = value ?? "";
+
+            if (rows.Length < 1)
+            {
+                systemData.Rows.Add(row);
+            }
         }
 
         /// <summary>
@@ -1408,7 +1790,7 @@ namespace IndigoMovieManager
                 && !string.IsNullOrEmpty(MainVM.DbInfo.Sort)
             )
             {
-                UpsertSystemTable(dbFullPath, "sort", MainVM.DbInfo.Sort);
+                TryPersistSystemValue(dbFullPath, "sort", MainVM.DbInfo.Sort);
             }
         }
 
@@ -1461,14 +1843,23 @@ namespace IndigoMovieManager
             long sourceApplyElapsedMs = 0;
             long filterSortElapsedMs = 0;
             long refreshElapsedMs = 0;
+            string executionRoute = MainWindow.ResolveFilterSortExecutionRouteLabel(
+                hasSnapshotData: latestMovieData != null,
+                startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
+                isGetNew: isGetNew
+            );
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter start: revision={requestRevision} sort={id} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
+                $"filter start: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
             );
 
             if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
             {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=db-reload sort={id} is_get_new={isGetNew}"
+                );
                 Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
                 // full reload の movie 読みは facade へ寄せ、並び順の SQL を UI から剥がす。
@@ -1477,6 +1868,10 @@ namespace IndigoMovieManager
                 );
                 dbLoadStopwatch.Stop();
                 dbLoadElapsedMs = dbLoadStopwatch.ElapsedMilliseconds;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=db-reload rows={latestMovieData?.Rows.Count ?? -1} elapsed_ms={dbLoadElapsedMs}"
+                );
                 if (latestMovieData == null)
                 {
                     DebugRuntimeLog.Write(
@@ -1494,6 +1889,10 @@ namespace IndigoMovieManager
                     return;
                 }
                 movieData = latestMovieData;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=source-apply rows={latestMovieData.Rows.Count}"
+                );
                 Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
                 latestMovieRecords = await SetRecordsToSource(latestMovieData, requestRevision);
                 // DB読み込みと変換が完了したので、rawなDataTable参照を残さずに解放する。
@@ -1509,6 +1908,10 @@ namespace IndigoMovieManager
                 InvalidateThumbnailErrorRecords(refreshIfVisible: true);
                 sourceApplyStopwatch.Stop();
                 sourceApplyElapsedMs = sourceApplyStopwatch.ElapsedMilliseconds;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=source-apply items={latestMovieRecords?.Length ?? -1} elapsed_ms={sourceApplyElapsedMs}"
+                );
             }
 
             if (requestRevision != _filterAndSortRequestRevision)
@@ -1522,17 +1925,52 @@ namespace IndigoMovieManager
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             string searchKeyword = MainVM.DbInfo.SearchKeyword;
-            IEnumerable<MovieRecords> filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
-                .Where(movie => movie != null);
-            (MovieRecords[] sorted, int searchCount) = await Task.Run(() =>
+            MovieRecords[] filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
+                .Where(movie => movie != null)
+                .ToArray();
+            bool runOnBackground = MainWindow.ShouldRunFilterSortOnBackground(filterSource.Length);
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute route={executionRoute} source={filterSource.Length} keyword='{searchKeyword}' background={runOnBackground}"
+            );
+
+            (MovieRecords[] sorted, int searchCount) ComputeFilterAndSortMovies()
             {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=filter-movies source={filterSource.Length} keyword='{searchKeyword}'"
+                );
+                Stopwatch filterMoviesStopwatch = Stopwatch.StartNew();
                 MovieRecords[] filtered = MainVM
                     .FilterMovies(filterSource, searchKeyword)
                     .ToArray();
+                filterMoviesStopwatch.Stop();
                 int resolvedSearchCount = filtered.Length;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=filter-movies filtered={resolvedSearchCount} elapsed_ms={filterMoviesStopwatch.ElapsedMilliseconds}"
+                );
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=sort-movies filtered={resolvedSearchCount} sort={id}"
+                );
+                Stopwatch sortMoviesStopwatch = Stopwatch.StartNew();
                 MovieRecords[] sortedMovies = MainVM.SortMovies(filtered, id).ToArray();
+                sortMoviesStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=sort-movies sorted={sortedMovies.Length} elapsed_ms={sortMoviesStopwatch.ElapsedMilliseconds}"
+                );
                 return (sortedMovies, resolvedSearchCount);
-            });
+            }
+
+            (MovieRecords[] sorted, int searchCount) = runOnBackground
+                ? await Task.Run(ComputeFilterAndSortMovies)
+                : ComputeFilterAndSortMovies();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage end: revision={requestRevision} stage=filter-sort-compute route={executionRoute} sorted={sorted.Length} search_count={searchCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
+            );
             if (requestRevision != _filterAndSortRequestRevision)
             {
                 DebugRuntimeLog.Write(
@@ -1546,12 +1984,22 @@ namespace IndigoMovieManager
             int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
                 ? resolvedTabIndex
                 : UpperTabGridFixedIndex;
-            FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
-                sorted,
-                updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+            FilteredMovieRecsUpdateMode updateMode =
+                UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
                     currentTabIndex,
                     isSortOnly: false
-                )
+                );
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage begin: revision={requestRevision} stage=replace-filtered update_mode={updateMode} sorted={sorted.Length}"
+            );
+            FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                sorted,
+                updateMode: updateMode
+            );
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage end: revision={requestRevision} stage=replace-filtered changed={applyResult.HasChanges} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
             );
             filterSortStopwatch.Stop();
             filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;
@@ -1559,7 +2007,13 @@ namespace IndigoMovieManager
             UpdateExtensionDetailVisibilityBySearchCount();
 
             Stopwatch refreshStopwatch = Stopwatch.StartNew();
-            if (applyResult.HasChanges)
+            bool shouldRefresh =
+                applyResult.HasChanges
+                && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                    currentTabIndex,
+                    updateMode
+                );
+            if (shouldRefresh)
             {
                 Refresh();
             }
@@ -1579,8 +2033,440 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
+        }
+
+        // in-memory に載っている一覧だけで再検索・再整列し、DB再読込なしで表示を更新する。
+        private async Task RefreshMovieViewFromCurrentSourceAsync(
+            string sortId,
+            string traceName,
+            UiHangActivityKind uiHangActivityKind,
+            IReadOnlyList<WatchChangedMovie> changedMovies = null
+        )
+        {
+            string resolvedTraceName = string.IsNullOrWhiteSpace(traceName) ? "memory-refresh" : traceName;
+            using IDisposable uiHangScope = TrackUiHangActivity(uiHangActivityKind);
+            Stopwatch totalStopwatch = Stopwatch.StartNew();
+            int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
+            string resolvedSortId = string.IsNullOrWhiteSpace(sortId)
+                ? MainVM?.DbInfo?.Sort ?? ""
+                : sortId;
+            string searchKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
+            MovieRecords[] sourceMovies = MainVM?
+                .MovieRecs?
+                .Where(movie => movie != null)
+                .ToArray() ?? [];
+            MovieRecords[] currentFilteredMovies = MainVM?
+                .FilteredMovieRecs?
+                .Where(movie => movie != null)
+                .ToArray() ?? [];
+            MovieRecords[] filtered = [];
+            MovieRecords[] sorted = [];
+            int searchCount = 0;
+            bool usedChangedPathRefresh = false;
+            bool canReuseCurrentOrder = false;
+
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length} changed_paths={changedMovies?.Count ?? 0}"
+            );
+
+            Stopwatch filterSortStopwatch = Stopwatch.StartNew();
+            await Task.Run(() =>
+            {
+                usedChangedPathRefresh = TryBuildChangedMovieRefreshSource(
+                    sourceMovies,
+                    currentFilteredMovies,
+                    searchKeyword,
+                    resolvedSortId,
+                    changedMovies,
+                    MainVM.FilterMovies,
+                    out filtered,
+                    out canReuseCurrentOrder
+                );
+                if (!usedChangedPathRefresh)
+                {
+                    filtered = MainVM.FilterMovies(sourceMovies, searchKeyword).ToArray();
+                }
+
+                searchCount = filtered.Length;
+                sorted = canReuseCurrentOrder
+                    ? filtered
+                    : MainVM.SortMovies(filtered, resolvedSortId).ToArray();
+            });
+
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"{resolvedTraceName} refresh skip stale compute: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                );
+                return;
+            }
+
+            FilteredMovieRecsUpdateResult applyResult = default;
+            bool applied = false;
+            if (Dispatcher == null || Dispatcher.CheckAccess())
+            {
+                // 既にUIスレッドなら再ディスパッチせず、その場で適用して待機時間を増やさない。
+                applied = TryApplyMemoryRefreshResultOnUiThread(
+                    requestRevision,
+                    sorted,
+                    searchCount,
+                    resolvedSortId,
+                    out applyResult
+                );
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        applied = TryApplyMemoryRefreshResultOnUiThread(
+                            requestRevision,
+                            sorted,
+                            searchCount,
+                            resolvedSortId,
+                            out applyResult
+                        );
+                    },
+                    DispatcherPriority.Background
+                );
+            }
+
+            if (!applied)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"{resolvedTraceName} refresh skip stale apply: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                );
+                return;
+            }
+
+            filterSortStopwatch.Stop();
+            totalStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+            );
+        }
+
+        // query-only更新結果のUI反映を1か所へ寄せ、Dispatcher呼び出し側を薄く保つ。
+        private bool TryApplyMemoryRefreshResultOnUiThread(
+            int requestRevision,
+            IReadOnlyList<MovieRecords> sortedMovies,
+            int searchCount,
+            string resolvedSortId,
+            out FilteredMovieRecsUpdateResult applyResult
+        )
+        {
+            applyResult = default;
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                return false;
+            }
+
+            int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                ? resolvedTabIndex
+                : UpperTabGridFixedIndex;
+            FilteredMovieRecsUpdateMode updateMode =
+                UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                    currentTabIndex,
+                    isSortOnly: false
+                );
+
+            MainVM.DbInfo.SearchCount = searchCount;
+            filterList = sortedMovies;
+            applyResult = MainVM.ReplaceFilteredMovieRecs(sortedMovies, updateMode: updateMode);
+            UpdateExtensionDetailVisibilityBySearchCount();
+
+            bool shouldRefresh =
+                applyResult.HasChanges
+                && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                    currentTabIndex,
+                    updateMode
+                );
+            if (shouldRefresh)
+            {
+                Refresh();
+            }
+
+            if (applyResult.HasChanges)
+            {
+                NotifyUpperTabViewportSourceChanged();
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rename");
+            }
+
+            if (string.Equals(resolvedSortId, "28", StringComparison.Ordinal))
+            {
+                RefreshThumbnailErrorRecords(force: true);
+            }
+
+            return true;
+        }
+
+        // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。
+        private Task RefreshMovieViewAfterRenameAsync(
+            string sortId,
+            IReadOnlyList<WatchChangedMovie> changedMovies = null
+        )
+        {
+            return RefreshMovieViewFromCurrentSourceAsync(
+                sortId,
+                "rename",
+                UiHangActivityKind.Watch,
+                changedMovies
+            );
+        }
+
+        // changed paths が少数の時は、現在の絞り込み結果から対象だけ抜き差しして全件 filter を避ける。
+        internal static bool TryBuildChangedMovieRefreshSource(
+            IEnumerable<MovieRecords> sourceMovies,
+            IEnumerable<MovieRecords> currentFilteredMovies,
+            string searchKeyword,
+            string sortId,
+            IEnumerable<WatchChangedMovie> changedMovies,
+            Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        )
+        {
+            nextFilteredMovies = [];
+            canReuseCurrentOrder = false;
+            List<WatchChangedMovie> normalizedChangedMovies = MainWindow.MergeChangedMovies([], changedMovies);
+            if (normalizedChangedMovies.Count < 1 || filterMovies == null)
+            {
+                return false;
+            }
+
+            // {dup} は changed path 以外の既存行も結果へ出入りするので、局所更新ではなく全体再評価へ戻す。
+            bool isDuplicateSearch = IndigoMovieManager.Infrastructure.SearchService.IsDuplicateSearchKeyword(
+                searchKeyword
+            );
+            if (
+                isDuplicateSearch
+                && normalizedChangedMovies.Any(changedMovie =>
+                    (changedMovie.DirtyFields & WatchMovieDirtyFields.Hash)
+                    != WatchMovieDirtyFields.None
+                )
+            )
+            {
+                return false;
+            }
+
+            Dictionary<string, MovieRecords> sourceByPath = sourceMovies?
+                .Where(movie => movie != null && !string.IsNullOrWhiteSpace(movie.Movie_Path))
+                .GroupBy(movie => movie.Movie_Path, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Last(),
+                    StringComparer.OrdinalIgnoreCase
+                ) ?? new Dictionary<string, MovieRecords>(StringComparer.OrdinalIgnoreCase);
+
+            HashSet<string> changedPathLookup = new(
+                normalizedChangedMovies.Select(x => x.MoviePath),
+                StringComparer.OrdinalIgnoreCase
+            );
+            HashSet<string> currentFilteredPathLookup = new(
+                currentFilteredMovies?
+                    .Where(movie => movie != null && !string.IsNullOrWhiteSpace(movie.Movie_Path))
+                    .Select(movie => movie.Movie_Path) ?? [],
+                StringComparer.OrdinalIgnoreCase
+            );
+            List<MovieRecords> nextMovies = currentFilteredMovies?
+                .Where(movie =>
+                    movie != null
+                    && (
+                        string.IsNullOrWhiteSpace(movie.Movie_Path)
+                        || !changedPathLookup.Contains(movie.Movie_Path)
+                    )
+                )
+                .ToList() ?? [];
+
+            bool canBypassFilterForEmptySearch = string.IsNullOrWhiteSpace(searchKeyword);
+            bool shouldReapplySort = false;
+            foreach (WatchChangedMovie changedMovie in normalizedChangedMovies)
+            {
+                string moviePath = changedMovie.MoviePath;
+                if (!sourceByPath.TryGetValue(moviePath, out MovieRecords sourceMovie))
+                {
+                    continue;
+                }
+
+                ApplyObservedStateToMovieRecord(sourceMovie, changedMovie.ObservedState);
+                bool canIncludeDirectly = canBypassFilterForEmptySearch;
+                bool wasMatchedBefore = currentFilteredPathLookup.Contains(moviePath);
+                bool canReuseCurrentSearchState =
+                    !canBypassFilterForEmptySearch
+                    && changedMovie.ChangeKind == WatchMovieChangeKind.None
+                    && !DoesSearchDependOnDirtyFields(searchKeyword, changedMovie.DirtyFields);
+
+                bool isMatch =
+                    canIncludeDirectly
+                    || (
+                        canReuseCurrentSearchState
+                            ? wasMatchedBefore
+                            : filterMovies([sourceMovie], searchKeyword).Any()
+                    );
+                if (isMatch)
+                {
+                    if (!wasMatchedBefore)
+                    {
+                        shouldReapplySort = true;
+                    }
+                    else if (DoesCurrentSortDependOnDirtyFields(sortId, changedMovie.DirtyFields))
+                    {
+                        shouldReapplySort = true;
+                    }
+
+                    nextMovies.Add(sourceMovie);
+                }
+            }
+
+            nextFilteredMovies = nextMovies.ToArray();
+            canReuseCurrentOrder = !shouldReapplySort;
+            return true;
+        }
+
+        // watch で拾った cheap な観測値だけを現在の行へ当て、DB再読込なしで sort/filter に効かせる。
+        internal static void ApplyObservedStateToMovieRecord(
+            MovieRecords target,
+            WatchMovieObservedState? observedState
+        )
+        {
+            if (target == null || !observedState.HasValue)
+            {
+                return;
+            }
+
+            WatchMovieObservedState currentObservedState = observedState.Value;
+            if (
+                !string.IsNullOrWhiteSpace(currentObservedState.FileDateText)
+                && !string.Equals(
+                    target.File_Date ?? "",
+                    currentObservedState.FileDateText,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                target.File_Date = currentObservedState.FileDateText;
+            }
+
+            if (target.Movie_Size != currentObservedState.MovieSizeKb)
+            {
+                target.Movie_Size = currentObservedState.MovieSizeKb;
+            }
+
+            if (
+                currentObservedState.MovieLengthSeconds.HasValue
+                && TryFormatObservedMovieLength(
+                    currentObservedState.MovieLengthSeconds.Value,
+                    out string movieLengthText
+                )
+                && !string.Equals(target.Movie_Length ?? "", movieLengthText, StringComparison.Ordinal)
+            )
+            {
+                target.Movie_Length = movieLengthText;
+            }
+        }
+
+        private static bool TryFormatObservedMovieLength(long movieLengthSeconds, out string movieLengthText)
+        {
+            movieLengthText = "";
+            if (movieLengthSeconds < 0)
+            {
+                return false;
+            }
+
+            movieLengthText = TimeSpan
+                .FromSeconds(movieLengthSeconds)
+                .ToString(@"hh\:mm\:ss");
+            return true;
+        }
+
+        // 今の検索文字列が dirty fields に依存しないなら、現在の一致状態をそのまま再利用できる。
+        internal static bool DoesSearchDependOnDirtyFields(
+            string searchKeyword,
+            WatchMovieDirtyFields dirtyFields
+        )
+        {
+            if (dirtyFields == WatchMovieDirtyFields.None || string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            if (IndigoMovieManager.Infrastructure.SearchService.IsDuplicateSearchKeyword(searchKeyword))
+            {
+                return (dirtyFields & WatchMovieDirtyFields.Hash) != WatchMovieDirtyFields.None;
+            }
+
+            if (IndigoMovieManager.Infrastructure.SearchService.IsTagOnlySearchKeyword(searchKeyword))
+            {
+                return false;
+            }
+
+            WatchMovieDirtyFields searchRelevantFields =
+                WatchMovieDirtyFields.MovieName
+                | WatchMovieDirtyFields.MoviePath
+                | WatchMovieDirtyFields.Kana
+                | WatchMovieDirtyFields.Comment1
+                | WatchMovieDirtyFields.Comment2
+                | WatchMovieDirtyFields.Comment3;
+            return (dirtyFields & searchRelevantFields) != WatchMovieDirtyFields.None;
+        }
+
+        // 小件数は同期処理で済ませ、Task.Run の切り替えコストを避ける。
+        internal static bool ShouldRunFilterSortOnBackground(int sourceCount)
+        {
+            return sourceCount >= 64;
+        }
+
+        // query-only と full reload を短い札にして、ui-tempo ログで経路を追いやすくする。
+        internal static string ResolveFilterSortExecutionRouteLabel(
+            bool hasSnapshotData,
+            bool startupFeedLoadedAllPages,
+            bool isGetNew
+        )
+        {
+            return ((!hasSnapshotData && !startupFeedLoadedAllPages) || isGetNew)
+                ? "full-reload"
+                : "query-only";
+        }
+
+        // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。
+        internal static bool DoesCurrentSortDependOnDirtyFields(
+            string sortId,
+            WatchMovieDirtyFields dirtyFields
+        )
+        {
+            if (dirtyFields == WatchMovieDirtyFields.None)
+            {
+                return false;
+            }
+
+            WatchMovieDirtyFields relevantFields = sortId switch
+            {
+                "0" or "1" => WatchMovieDirtyFields.LastDate,
+                "2" or "3" => WatchMovieDirtyFields.FileDate,
+                "6" or "7" => WatchMovieDirtyFields.Score,
+                "8" or "9" => WatchMovieDirtyFields.ViewCount,
+                "10" or "11" => WatchMovieDirtyFields.Kana,
+                "12" or "13" => WatchMovieDirtyFields.MovieName,
+                "14" or "15" => WatchMovieDirtyFields.MoviePath,
+                "16" or "17" => WatchMovieDirtyFields.MovieSize,
+                "18" or "19" => WatchMovieDirtyFields.RegistDate,
+                "20" or "21" => WatchMovieDirtyFields.MovieLength,
+                "22" or "23" => WatchMovieDirtyFields.Comment1,
+                "24" or "25" => WatchMovieDirtyFields.Comment2,
+                "26" or "27" => WatchMovieDirtyFields.Comment3,
+                "28" => WatchMovieDirtyFields.ThumbnailError
+                    | WatchMovieDirtyFields.MovieName
+                    | WatchMovieDirtyFields.MoviePath,
+                _ => WatchMovieDirtyFields.None,
+            };
+
+            return (dirtyFields & relevantFields) != WatchMovieDirtyFields.None;
         }
 
         /// <summary>
@@ -1605,24 +2491,35 @@ namespace IndigoMovieManager
                 int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
                     ? resolvedTabIndex
                     : UpperTabGridFixedIndex;
-                FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
-                    sorted,
-                    updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                FilteredMovieRecsUpdateMode updateMode =
+                    UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
                         currentTabIndex,
                         isSortOnly: true
-                    )
+                    );
+                FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                    sorted,
+                    updateMode: updateMode
                 );
                 MainVM.DbInfo.SearchCount = sorted.Length;
+                bool shouldRefresh =
+                    applyResult.HasChanges
+                    && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                        currentTabIndex,
+                        updateMode
+                    );
                 if (applyResult.HasChanges)
                 {
                     NotifyUpperTabViewportSourceChanged();
-                    Refresh();
+                    if (shouldRefresh)
+                    {
+                        Refresh();
+                    }
                     RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
                 }
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(currentTabIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={updateMode} refresh_applied={shouldRefresh} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)
@@ -2184,6 +3081,10 @@ namespace IndigoMovieManager
         private void ComboSort_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                return;
+            }
+            if (_suppressSortComboSelectionChangedHandling)
             {
                 return;
             }

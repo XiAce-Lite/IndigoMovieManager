@@ -82,6 +82,9 @@ namespace IndigoMovieManager.DB
         private const int MainDbBusyTimeoutMs = 5000;
         private const int UncSchemaValidationRetryBudgetMs = 4000;
         private const int UncSchemaValidationRetryDelayMs = 500;
+        // TODO 2026-04-11: DBエラー連鎖の根本原因を潰したら false に戻し、popup を復帰する。
+        // 復帰条件の整理は DB/Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md を参照。
+        private static readonly bool SuppressDbErrorDialogTemporarily = true;
 
         /// <summary>
         /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
@@ -111,9 +114,28 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
             return null;
+        }
+
+        private static void ReportDbError(Exception exception, string title)
+        {
+            string errorType = exception?.GetType().Name ?? nameof(Exception);
+            string message = exception?.Message ?? "DBエラーの詳細を取得できませんでした。";
+
+            // 今は popup を止め、ログだけ残して原因調査を優先する。
+            DebugRuntimeLog.Write(
+                "db",
+                $"db error dialog {(SuppressDbErrorDialogTemporarily ? "suppressed" : "shown")}: title='{title}' err='{errorType}: {message}'"
+            );
+
+            if (SuppressDbErrorDialogTemporarily)
+            {
+                return;
+            }
+
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         /// <summary>
@@ -746,7 +768,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -778,7 +800,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -828,7 +850,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -837,35 +859,10 @@ namespace IndigoMovieManager.DB
         /// </summary>
         public static void UpsertSystemTable(string dbFullPath, string attr, string value)
         {
-            bool exists = false;
-            try
-            {
-                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
-                connection.Open();
-
-                using SQLiteCommand cmd = connection.CreateCommand();
-                cmd.CommandText = "select 1 from system where attr = @attr limit 1";
-                cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                exists = cmd.ExecuteScalar() != null;
-            }
-            catch (Exception e)
-            {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            if (exists)
-            {
-                UpdateSystemTable(dbFullPath, attr, value);
-                return;
-            }
-
-            InsertSystemTable(dbFullPath, attr, value);
+            TryUpsertSystemTable(dbFullPath, attr, value);
         }
 
-        private static void InsertSystemTable(string dbFullPath, string attr, string value)
+        internal static bool TryUpsertSystemTable(string dbFullPath, string attr, string value)
         {
             try
             {
@@ -873,21 +870,27 @@ namespace IndigoMovieManager.DB
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
-                using (SQLiteCommand cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = "insert into system (attr, value) values (@attr, @value)";
-                    cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
-                    cmd.ExecuteNonQuery();
-                }
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    """
+                    INSERT INTO system (attr, value)
+                    VALUES (@attr, @value)
+                    ON CONFLICT(attr) DO UPDATE SET value = excluded.value
+                    """;
+                cmd.Parameters.Add(new SQLiteParameter("@attr", attr ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
+                cmd.ExecuteNonQuery();
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -895,6 +898,11 @@ namespace IndigoMovieManager.DB
         /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
         /// </summary>
         public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
+        {
+            TryUpsertProfileTable(dbFullPath, skin, key, value);
+        }
+
+        internal static bool TryUpsertProfileTable(string dbFullPath, string skin, string key, string value)
         {
             try
             {
@@ -914,13 +922,16 @@ namespace IndigoMovieManager.DB
                 cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
                 cmd.ExecuteNonQuery();
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -947,32 +958,6 @@ namespace IndigoMovieManager.DB
                 return "";
             }
         }
-
-        private static void UpdateSystemTable(string dbFullPath, string attr, string value)
-        {
-            try
-            {
-                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
-                connection.Open();
-
-                using var transaction = connection.BeginTransaction();
-                using (SQLiteCommand cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = "update system set value = @value where attr = @attr";
-                    cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
-                    cmd.ExecuteNonQuery();
-                }
-                transaction.Commit();
-            }
-            catch (Exception e)
-            {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         /// <summary>
         /// 指定されたムービーをmovieテーブルから完全に消し飛ばす！さらば友よ！👋
         /// </summary>
@@ -997,7 +982,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
 
             return 0;
@@ -1031,7 +1016,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1058,7 +1043,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1232,7 +1217,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
             return Task.FromResult(0);
         }
@@ -1408,7 +1393,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
 
             return Task.FromResult(0);
@@ -1792,7 +1777,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1828,7 +1813,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1899,7 +1884,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1992,7 +1977,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2020,7 +2005,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2079,7 +2064,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2106,7 +2091,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 

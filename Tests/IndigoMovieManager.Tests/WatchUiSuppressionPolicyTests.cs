@@ -61,6 +61,93 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void ShouldDeferBackgroundWorkForUserPriority_手動以外の背後処理だけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: true,
+                isManualMode: false
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: true,
+                isManualMode: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: false,
+                isManualMode: false
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldQueueBackgroundCatchUpAfterUserPriority_解除済みかつ保留ありだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: false,
+                hasDeferredWatchWork: true
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: true,
+                hasDeferredWatchWork: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: false,
+                hasDeferredWatchWork: false
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldSkipWatchCatchUpAfterUiSuppression_manual_reloadだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("manual-reload"),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("drawer-root"),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldSkipWatchCatchUpAfterUiSuppression_reasonは大小文字違いでもmanual_reloadを判定する()
+    {
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("MANUAL-RELOAD"),
+            Is.True
+        );
+    }
+
+    [Test]
+    public void IsManualReloadDeferredScanTrigger_Header再読込deferredだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.IsManualReloadDeferredScanTrigger("Header.ReloadButton:deferred"),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.IsManualReloadDeferredScanTrigger("Header.ReloadButton"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void MergeWatchDeferredPathsForUiSuppression_未flush分と残件を重複排除して返す()
     {
         List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
@@ -106,6 +193,60 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_null入力でも空配列を返す()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: null!,
+            remainingScanPaths: null!,
+            pendingInsertPaths: null!,
+            pendingEnqueuePaths: null!
+        );
+
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_区切り揺れでも同じpathとして1件に潰す()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: [@"E:\Movies\idol\a.mp4"],
+            remainingScanPaths: ["E:/Movies/idol/a.mp4"],
+            pendingInsertPaths: [@"E:\Movies\idol\b.mp4"],
+            pendingEnqueuePaths: ["E:/Movies/idol/b.mp4"]
+        );
+
+        Assert.That(
+            result,
+            Is.EqualTo(
+                [
+                    @"E:\Movies\idol\a.mp4",
+                    @"E:\Movies\idol\b.mp4",
+                ]
+            )
+        );
+    }
+
+    [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_current側を先頭優先で維持する()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: ["E:/Movies/idol/a.mp4"],
+            remainingScanPaths: [@"E:\Movies\idol\a.mp4"],
+            pendingInsertPaths: null,
+            pendingEnqueuePaths: null
+        );
+
+        Assert.That(
+            result,
+            Is.EqualTo(
+                [
+                    @"E:\Movies\idol\a.mp4",
+                ]
+            )
+        );
+    }
+
+    [Test]
     public void EndWatchUiSuppression_defer複数回でもcatch_upは1回だけQueueCheckFolderAsyncする()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();
@@ -132,6 +273,84 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void EndWatchUiSuppression_manual_reloadではdeferありでもcatch_upをQueueしない()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_checkFolderRequestSync", new object());
+        SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(0, 1));
+
+        List<string> queuedTriggers = [];
+        window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+        {
+            queuedTriggers.Add($"{mode}:{trigger}");
+        };
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "manual-reload");
+        InvokeVoid(window, "MarkWatchWorkDeferredWhileSuppressed", "watch-created");
+        InvokeVoid(window, "EndWatchUiSuppression", "manual-reload");
+
+        Assert.That(queuedTriggers, Is.Empty);
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ManualReloadUiSuppression_手動再読み込み中だけ専用フラグが立つ()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "left-drawer");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "manual-reload");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.True);
+
+        InvokeVoid(window, "EndWatchUiSuppression", "manual-reload");
+        Assert.That(InvokeBool(window, "IsManualReloadUiSuppressionActive"), Is.False);
+
+        InvokeVoid(window, "EndWatchUiSuppression", "left-drawer");
+    }
+
+    [Test]
+    public void EndUserPriorityWork_watch延期はsuppressionなしでもcatch_upをQueueする()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_userPriorityWorkSync", new object());
+        SetPrivateField(window, "_checkFolderRequestSync", new object());
+        SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(0, 1));
+
+        List<string> queuedTriggers = [];
+        window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+        {
+            queuedTriggers.Add($"{mode}:{trigger}");
+        };
+
+        InvokeVoid(window, "BeginUserPriorityWork", "search");
+        InvokeVoid(window, "QueueCheckFolderAsync", ParseCheckMode("Watch"), "created:movie");
+
+        Assert.That(queuedTriggers, Is.Empty);
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.True
+        );
+
+        InvokeVoid(window, "EndUserPriorityWork", "search");
+
+        Assert.That(queuedTriggers, Is.EqualTo(["Watch:user-priority-resume:search"]));
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_suppression中は最後のFilterAndSortを走らせずdeferへ戻す()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();
@@ -146,7 +365,9 @@ public sealed class WatchUiSuppressionPolicyTests
             "HandleFolderCheckUiReloadAfterChanges",
             true,
             ParseCheckMode("Watch"),
-            @"D:\Db\Main.wb"
+            @"D:\Db\Main.wb",
+            true,
+            Array.Empty<MainWindow.WatchChangedMovie>()
         );
 
         Assert.That(filterAndSortCount, Is.EqualTo(0));
@@ -163,6 +384,7 @@ public sealed class WatchUiSuppressionPolicyTests
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode: true,
                 isWatchSuppressedByUi: true,
+                isBackgroundWorkSuppressedByUserPriority: false,
                 isCurrentWatchScope: true
             );
 
@@ -179,12 +401,30 @@ public sealed class WatchUiSuppressionPolicyTests
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode: false,
                 isWatchSuppressedByUi: true,
+                isBackgroundWorkSuppressedByUserPriority: false,
                 isCurrentWatchScope: false
             );
 
         Assert.That(
             result,
             Is.EqualTo(MainWindow.MissingThumbnailRescueGuardAction.Continue)
+        );
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailRescueGuardAction_watch_検索優先中はcatch_upへ戻す()
+    {
+        MainWindow.MissingThumbnailRescueGuardAction result =
+            MainWindow.ResolveMissingThumbnailRescueGuardAction(
+                isWatchMode: true,
+                isWatchSuppressedByUi: false,
+                isBackgroundWorkSuppressedByUserPriority: true,
+                isCurrentWatchScope: true
+            );
+
+        Assert.That(
+            result,
+            Is.EqualTo(MainWindow.MissingThumbnailRescueGuardAction.DeferByUiSuppression)
         );
     }
 
@@ -210,6 +450,16 @@ public sealed class WatchUiSuppressionPolicyTests
         )!;
         Assert.That(method, Is.Not.Null, methodName);
         method.Invoke(window, args);
+    }
+
+    private static bool InvokeBool(MainWindow window, string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        return (bool)method.Invoke(window, args)!;
     }
 
     private static void SetPrivateField(MainWindow window, string fieldName, object value)

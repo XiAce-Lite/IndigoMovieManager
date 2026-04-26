@@ -408,17 +408,23 @@ namespace IndigoMovieManager
                         {
                             string reflectedMoviePath =
                                 sourceMovieFullPathOverride ?? queueObj?.MovieFullPath ?? "";
+                            MovieRecords updatedMovie = null;
                             foreach (
                                 var item in MainVM.MovieRecs.Where(x =>
                                     IsSameMovieForQueue(x, queueObj, resolvedMovieId)
                                 )
                             )
                             {
-                                _ = TryApplyThumbnailPathToMovieRecord(
-                                    item,
-                                    queueObj.Tabindex,
-                                    saveThumbFileName
-                                );
+                                if (
+                                    TryApplyThumbnailPathToMovieRecord(
+                                        item,
+                                        queueObj.Tabindex,
+                                        saveThumbFileName
+                                    )
+                                )
+                                {
+                                    updatedMovie ??= item;
+                                }
                             }
 
                             // 特殊タブはコピー済みViewModelを持つため、成功jpgを個別に差し替える。
@@ -441,6 +447,15 @@ namespace IndigoMovieManager
                                 );
                                 RequestMainTabFullReloadAfterThumbnailSuccess(
                                     "preferred-create-success"
+                                );
+                            }
+
+                            if (updatedMovie != null)
+                            {
+                                TryQueueExternalSkinThumbnailUpdated(
+                                    updatedMovie,
+                                    queueObj.Tabindex,
+                                    "thumbnail-create-success"
                                 );
                             }
                         },

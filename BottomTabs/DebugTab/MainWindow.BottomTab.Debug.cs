@@ -20,11 +20,8 @@ namespace IndigoMovieManager
     {
         private const string DebugToolContentId = "ToolDebug";
         private const int DebugLogRefreshIntervalMs = 3000;
-        private const int DebugLogPreviewMaxBytes = 65536;
-        private const int DebugLogPreviewMaxChars = 16000;
-        private static readonly bool ShouldShowDebugTab = EvaluateShowDebugTab();
+        private static bool ShouldShowDebugTab => EvaluateShowDebugTab();
 
-        private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         private DispatcherTimer _debugTabRefreshTimer;
         private DebugTabPresenter _debugTabPresenter;
         private string _debugCurrentDbRecordCountPath = "";
@@ -60,12 +57,32 @@ namespace IndigoMovieManager
 
         private static bool EvaluateShowDebugTab()
         {
+            bool isDebuggerAttached = Debugger.IsAttached;
 #if DEBUG
-            // Release ビルドでは強制的に非表示にする。たとえシンボル定義が混入していても想定外表示を防ぐ。
-            return !IsReleaseBuild();
+            const bool isDebugBuild = true;
 #else
-            return false;
+            const bool isDebugBuild = false;
 #endif
+            // 開発中の確認用途では、Release 実行でも debugger 接続中なら明示的に見せる。
+            return ShouldShowDebugTabCore(
+                isDebugBuild,
+                IsReleaseBuild(),
+                isDebuggerAttached
+            );
+        }
+
+        internal static bool ShouldShowDebugTabCore(
+            bool isDebugBuild,
+            bool isReleaseBuild,
+            bool isDebuggerAttached
+        )
+        {
+            if (isDebuggerAttached)
+            {
+                return true;
+            }
+
+            return isDebugBuild && !isReleaseBuild;
         }
 
         private static bool IsReleaseBuild()
@@ -87,10 +104,10 @@ namespace IndigoMovieManager
 
         private void DebugTabRefreshTimer_Tick(object sender, EventArgs e)
         {
-            _debugTabPresenter?.HandleTimerTick(() => RefreshDebugLogPreview());
+            _debugTabPresenter?.HandleTimerTick(() => RefreshDebugArtifactPaths());
         }
 
-        // Debugタブがアクティブな間だけ低頻度で更新し、前面に来た瞬間だけ強制反映する。
+        // Debugタブがアクティブな間だけ低頻度で状態を更新し、前面に来た瞬間だけ強制反映する。
         private void UpdateDebugTabRefreshState(bool forceRefresh)
         {
             bool isActive = IsDebugTabActive();
@@ -98,8 +115,8 @@ namespace IndigoMovieManager
 
             if (isActive && (forceRefresh || !(_debugTabPresenter?.WasActive ?? false)))
             {
+                RefreshDebugArtifactPaths();
                 RefreshDebugRecordCounts(force: true);
-                RefreshDebugLogPreview(force: true);
             }
 
             _debugTabPresenter?.RecordRefreshState(isActive);
@@ -181,94 +198,6 @@ namespace IndigoMovieManager
                 $"show complete. Parent={DebugTab.Parent?.GetType().Name ?? "null"} Selected={DebugTab.IsSelected} Hidden={DebugTab.IsHidden}"
             );
             UpdateDebugTabRefreshState(forceRefresh: true);
-        }
-
-        // ログ更新があった時だけ末尾を読み直し、UI負荷を増やしすぎないようにする。
-        private void RefreshDebugLogPreview(bool force = false)
-        {
-            if (
-                !ShouldShowDebugTab
-                || (!force && !IsDebugTabActive())
-                || DebugTabViewHost?.LogTextBox == null
-                || DebugTabViewHost?.LogPathTextBlock == null
-            )
-            {
-                return;
-            }
-
-            RefreshDebugArtifactPaths();
-
-            string logPath = Path.Combine(AppLocalDataPaths.LogsPath, "debug-runtime.log");
-            SetTextIfChanged(DebugTabViewHost.LogPathTextBlock, logPath);
-
-            DateTime lastWriteTimeUtc = File.Exists(logPath)
-                ? File.GetLastWriteTimeUtc(logPath)
-                : DateTime.MinValue;
-            if (!force && lastWriteTimeUtc == _debugLogLastWriteTimeUtc)
-            {
-                return;
-            }
-
-            _debugLogLastWriteTimeUtc = lastWriteTimeUtc;
-            SetTextIfChanged(DebugTabViewHost.LogTextBox, ReadDebugLogPreview(logPath));
-            SetTextIfChanged(
-                DebugTabViewHost.LogInfoTextBlock,
-                lastWriteTimeUtc == DateTime.MinValue
-                    ? "debug-runtime.log はまだ作成されていません。"
-                    : $"最終更新: {lastWriteTimeUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}"
-            );
-
-            if (force)
-            {
-                DebugTabViewHost.ScrollLogToEnd();
-            }
-        }
-
-        // 巨大ログを丸読みせず、末尾だけ拾って確認用に見せる。
-        private static string ReadDebugLogPreview(string logPath)
-        {
-            if (!File.Exists(logPath))
-            {
-                return "debug-runtime.log はまだ作成されていません。";
-            }
-
-            try
-            {
-                using var stream = new FileStream(
-                    logPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete
-                );
-                long start = Math.Max(0, stream.Length - DebugLogPreviewMaxBytes);
-                stream.Seek(start, SeekOrigin.Begin);
-
-                using var reader = new StreamReader(stream);
-                string text = reader.ReadToEnd();
-
-                if (start > 0)
-                {
-                    int firstNewLineIndex = text.IndexOf('\n');
-                    if (firstNewLineIndex >= 0 && firstNewLineIndex + 1 < text.Length)
-                    {
-                        text = text[(firstNewLineIndex + 1)..];
-                    }
-                }
-
-                text = text.TrimStart('\r', '\n');
-                if (text.Length > DebugLogPreviewMaxChars)
-                {
-                    text = text[^DebugLogPreviewMaxChars..];
-                }
-
-                return string.IsNullOrWhiteSpace(text)
-                    ? "debug-runtime.log は空です。"
-                    : text;
-            }
-            catch (Exception ex)
-            {
-                return $"debug-runtime.log の読込に失敗しました: {ex.Message}";
-            }
         }
 
         // Debugタブの各パス表示を、現在の選択DBに追従させる。
@@ -703,7 +632,7 @@ namespace IndigoMovieManager
             ClearThumbnailQueue();
             OpenDatafile(dbPath);
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugDeleteCurrentDb_Click(object sender, RoutedEventArgs e)
@@ -760,7 +689,7 @@ namespace IndigoMovieManager
             }
 
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugRefreshQueueDbRecordCount_Click(object sender, RoutedEventArgs e)
@@ -822,7 +751,7 @@ namespace IndigoMovieManager
             }
 
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugDeleteFailureDb_Click(object sender, RoutedEventArgs e)
@@ -865,7 +794,7 @@ namespace IndigoMovieManager
             }
 
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugClearQueueDbRecords_Click(object sender, RoutedEventArgs e)
@@ -894,7 +823,7 @@ namespace IndigoMovieManager
                 $"debug clear queue db: deleted={deleted} path='{queueDbService.QueueDbFullPath}'"
             );
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugDeleteQueueDb_Click(object sender, RoutedEventArgs e)
@@ -938,7 +867,7 @@ namespace IndigoMovieManager
             }
 
             RefreshDebugRecordCounts(force: true);
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugDeleteThumbnailDir_Click(object sender, RoutedEventArgs e)
@@ -986,7 +915,7 @@ namespace IndigoMovieManager
                 );
             }
 
-            RefreshDebugLogPreview(force: true);
+            RefreshLogTabPreview(force: true);
         }
 
         private void DebugRecreateAllThumbnails_Click(object sender, RoutedEventArgs e)
@@ -997,7 +926,7 @@ namespace IndigoMovieManager
                     "debug-ui",
                     $"debug recreate all thumbnails queued: tab={GetCurrentUpperTabFixedIndex()}"
                 );
-                RefreshDebugLogPreview(force: true);
+                RefreshLogTabPreview(force: true);
             }
         }
 

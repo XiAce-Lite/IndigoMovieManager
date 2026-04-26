@@ -171,6 +171,18 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.5")]
+        public double PlayerVolume {
+            get {
+                return ((double)(this["PlayerVolume"]));
+            }
+            set {
+                this["PlayerVolume"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("7")]
         public int RecentFilesCount {
             get {
@@ -503,6 +515,102 @@ namespace IndigoMovieManager.Properties {
             }
             set {
                 this["ThemeMode"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogWatchEnabled {
+            get {
+                return ((bool)(this["DebugLogWatchEnabled"]));
+            }
+            set {
+                this["DebugLogWatchEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogQueueEnabled {
+            get {
+                return ((bool)(this["DebugLogQueueEnabled"]));
+            }
+            set {
+                this["DebugLogQueueEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogThumbnailEnabled {
+            get {
+                return ((bool)(this["DebugLogThumbnailEnabled"]));
+            }
+            set {
+                this["DebugLogThumbnailEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogUiEnabled {
+            get {
+                return ((bool)(this["DebugLogUiEnabled"]));
+            }
+            set {
+                this["DebugLogUiEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogSkinEnabled {
+            get {
+                return ((bool)(this["DebugLogSkinEnabled"]));
+            }
+            set {
+                this["DebugLogSkinEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogDebugToolEnabled {
+            get {
+                return ((bool)(this["DebugLogDebugToolEnabled"]));
+            }
+            set {
+                this["DebugLogDebugToolEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogDatabaseEnabled {
+            get {
+                return ((bool)(this["DebugLogDatabaseEnabled"]));
+            }
+            set {
+                this["DebugLogDatabaseEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DebugLogOtherEnabled {
+            get {
+                return ((bool)(this["DebugLogOtherEnabled"]));
+            }
+            set {
+                this["DebugLogOtherEnabled"] = value;
             }
         }
     }

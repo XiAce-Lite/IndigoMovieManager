@@ -1621,9 +1621,11 @@ namespace IndigoMovieManager
             }
 
             _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 1);
-            if (_thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() != true)
+            bool isVisibleOrSelected = _thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() == true;
+            if (!isVisibleOrSelected)
             {
                 _thumbnailProgressTabPresenter?.MarkDirtyWhileHidden();
+                return;
             }
 
             if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)

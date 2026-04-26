@@ -21,6 +21,7 @@ namespace IndigoMovieManager
                 return;
             }
 
+            UpdateUiHangNotificationOwnerWindow();
             UpdateUiHangWindowStateSnapshot();
             UpdateUiHangNotificationPlacement();
             _uiHangNotificationCoordinator.Start();
@@ -41,6 +42,22 @@ namespace IndigoMovieManager
         private void UpdateUiHangNotificationPlacement()
         {
             _uiHangNotificationCoordinator.UpdatePlacement(ResolveUiHangOverlayPlacement());
+        }
+
+        private void UpdateUiHangNotificationOwnerWindow()
+        {
+            nint windowHandle;
+
+            try
+            {
+                windowHandle = new WindowInteropHelper(this).Handle;
+            }
+            catch
+            {
+                windowHandle = 0;
+            }
+
+            _uiHangNotificationCoordinator.UpdateOwnerWindowHandle(windowHandle);
         }
 
         private void UpdateUiHangNotificationVisibilityPolicy()

@@ -135,6 +135,7 @@ namespace IndigoMovieManager
             _activeUpperTabVisibleRange = UpperTabVisibleRange.Empty;
             _preferredVisibleMoviePathKeysSnapshot = Array.Empty<string>();
             _preferredVisibleMoviePathKeysSourceRevision = _upperTabViewportSourceRevision;
+            UpperTabActivationGate.ClearPreferredMoviePathKeys();
             _activeUpperTabVisibleErrorMoviePathKeysSnapshot = Array.Empty<string>();
             _thumbnailVisibleErrorRescueRequestVersion++;
         }
@@ -289,6 +290,8 @@ namespace IndigoMovieManager
             AttachUpperTabScrollViewer(SmallList);
             AttachUpperTabScrollViewer(BigList);
             AttachUpperTabScrollViewer(GridList);
+            AttachUpperTabScrollViewer(PlayerThumbnailList);
+            AttachUpperTabScrollViewer(PlayerThumbnailCompactList);
             AttachUpperTabScrollViewer(ListDataGrid);
             AttachUpperTabScrollViewer(BigList10);
         }
@@ -541,6 +544,7 @@ namespace IndigoMovieManager
             _activeUpperTabVisibleRange = nextRange;
             _preferredVisibleMoviePathKeysSnapshot = nextPreferredMoviePathKeys;
             _preferredVisibleMoviePathKeysSourceRevision = _upperTabViewportSourceRevision;
+            UpperTabActivationGate.UpdatePreferredMoviePathKeys(nextPreferredMoviePathKeys);
         }
 
         // viewport 計測不能時の後始末とログを 1 か所へ寄せ、早期 return を読みやすくする。

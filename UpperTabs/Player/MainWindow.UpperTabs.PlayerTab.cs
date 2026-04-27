@@ -260,78 +260,86 @@ namespace IndigoMovieManager
                 return;
             }
 
-            EnsureManualPlayerResizeTrackingHooked();
-            UpdatePlayerTabLayoutMode();
-
-            if (!ReferenceEquals(Tabs?.SelectedItem, TabPlayer))
+            BeginUserPriorityWork("player");
+            try
             {
-                _suppressPlayerTabActivationAutoOpen = true;
-                try
+                EnsureManualPlayerResizeTrackingHooked();
+                UpdatePlayerTabLayoutMode();
+
+                if (!ReferenceEquals(Tabs?.SelectedItem, TabPlayer))
+                {
+                    _suppressPlayerTabActivationAutoOpen = true;
+                    try
+                    {
+                        if (syncPlayerSelection)
+                        {
+                            SyncUpperTabPlayerSelection(movie);
+                        }
+
+                        SelectUpperTabByFixedIndex(PlayerTabIndex);
+                        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                    }
+                    finally
+                    {
+                        _suppressPlayerTabActivationAutoOpen = false;
+                    }
+                }
+                else
                 {
                     if (syncPlayerSelection)
                     {
                         SyncUpperTabPlayerSelection(movie);
                     }
+                }
 
-                    SelectUpperTabByFixedIndex(PlayerTabIndex);
-                    await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
-                }
-                finally
+                // プレイヤータブの通常再生は WebView2 を正面採用し、
+                // 手動サムネ位置合わせだけ従来の MediaElement を残す。
+                if (ShouldUseWebViewPlayerForPlayerTab(movie.Movie_Path, focusTimeSlider))
                 {
-                    _suppressPlayerTabActivationAutoOpen = false;
+                    await OpenMovieInWebViewPlayerAsync(
+                        movie,
+                        startMilliseconds,
+                        playImmediately,
+                        mute
+                    );
+                    return;
                 }
-            }
-            else
-            {
-                if (syncPlayerSelection)
-                {
-                    SyncUpperTabPlayerSelection(movie);
-                }
-            }
 
-            // プレイヤータブの通常再生は WebView2 を正面採用し、
-            // 手動サムネ位置合わせだけ従来の MediaElement を残す。
-            if (ShouldUseWebViewPlayerForPlayerTab(movie.Movie_Path, focusTimeSlider))
-            {
-                await OpenMovieInWebViewPlayerAsync(
-                    movie,
+                if (_isWebViewPlayerActive)
+                {
+                    ResetWebViewPlayerSurface();
+                }
+
+                ShowPlayerSurface();
+                StopDispatcherTimerSafely(timer, nameof(timer));
+                RememberPendingPlayerPlaybackRequest(
                     startMilliseconds,
                     playImmediately,
-                    mute
+                    mute,
+                    focusTimeSlider
                 );
-                return;
-            }
 
-            if (_isWebViewPlayerActive)
+                bool sourceChanged =
+                    !string.Equals(
+                        _currentPlayerMoviePath,
+                        movie.Movie_Path,
+                        System.StringComparison.OrdinalIgnoreCase
+                    )
+                    || uxVideoPlayer.Source == null;
+                if (sourceChanged)
+                {
+                    uxVideoPlayer.Stop();
+                    uxVideoPlayer.Source = new System.Uri(movie.Movie_Path);
+                    _currentPlayerMoviePath = movie.Movie_Path;
+                    return;
+                }
+
+                await ApplyPendingPlayerPlaybackRequestAsync();
+            }
+            finally
             {
-                ResetWebViewPlayerSurface();
+                EndUserPriorityWork("player");
             }
-
-            ShowPlayerSurface();
-            StopDispatcherTimerSafely(timer, nameof(timer));
-            RememberPendingPlayerPlaybackRequest(
-                startMilliseconds,
-                playImmediately,
-                mute,
-                focusTimeSlider
-            );
-
-            bool sourceChanged =
-                !string.Equals(
-                    _currentPlayerMoviePath,
-                    movie.Movie_Path,
-                    System.StringComparison.OrdinalIgnoreCase
-                )
-                || uxVideoPlayer.Source == null;
-            if (sourceChanged)
-            {
-                uxVideoPlayer.Stop();
-                uxVideoPlayer.Source = new System.Uri(movie.Movie_Path);
-                _currentPlayerMoviePath = movie.Movie_Path;
-                return;
-            }
-
-            await ApplyPendingPlayerPlaybackRequestAsync();
         }
 
         // MediaElement が苦手な形式だけ、Chromium の HTML5 video へ切り替えて再生互換を確保する。

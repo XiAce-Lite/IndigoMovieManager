@@ -147,6 +147,18 @@ public sealed class ManualPlayerResizeHookPolicyTests
         );
     }
 
+    [Test]
+    public void OpenMovieInPlayerTabAsync_Player操作中はuser_priority_scopeで囲む()
+    {
+        // Player 再生開始中は watch/poll を後ろへ逃がし、早期 return でも必ず解除する。
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(upperTabPlayerSource, Does.Contain("BeginUserPriorityWork(\"player\");"));
+        Assert.That(upperTabPlayerSource, Does.Contain("try"));
+        Assert.That(upperTabPlayerSource, Does.Contain("finally"));
+        Assert.That(upperTabPlayerSource, Does.Contain("EndUserPriorityWork(\"player\");"));
+    }
+
     private static string GetMainWindowPlayerSourceText()
     {
         return GetRepoText("Views", "Main", "MainWindow.Player.cs");

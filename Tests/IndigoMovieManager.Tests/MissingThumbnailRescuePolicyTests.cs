@@ -793,6 +793,46 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ResolveThumbnailProgressSnapshotRefreshDecision_許可時刻を過ぎていれば即時予約する()
+    {
+        long nowTicks = new DateTime(2026, 4, 27, 10, 0, 0, DateTimeKind.Utc).Ticks;
+
+        MainWindow.ThumbnailProgressSnapshotRefreshDecision result =
+            MainWindow.ResolveThumbnailProgressSnapshotRefreshDecision(
+                nowTicks,
+                nextAllowedUtcTicks: nowTicks - TimeSpan.FromMilliseconds(1).Ticks,
+                coalesceMs: 120
+            );
+
+        Assert.That(result.ShouldQueueNow, Is.True);
+        Assert.That(result.ShouldQueueDelayed, Is.False);
+        Assert.That(result.Delay, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(
+            result.NextAllowedUtcTicks,
+            Is.EqualTo(nowTicks + TimeSpan.FromMilliseconds(120).Ticks)
+        );
+    }
+
+    [Test]
+    public void ResolveThumbnailProgressSnapshotRefreshDecision_間隔内イベントは遅延1本へ寄せる()
+    {
+        long nowTicks = new DateTime(2026, 4, 27, 10, 0, 0, DateTimeKind.Utc).Ticks;
+        long nextAllowedTicks = nowTicks + TimeSpan.FromMilliseconds(80).Ticks;
+
+        MainWindow.ThumbnailProgressSnapshotRefreshDecision result =
+            MainWindow.ResolveThumbnailProgressSnapshotRefreshDecision(
+                nowTicks,
+                nextAllowedTicks,
+                coalesceMs: 120
+            );
+
+        Assert.That(result.ShouldQueueNow, Is.False);
+        Assert.That(result.ShouldQueueDelayed, Is.True);
+        Assert.That(result.Delay, Is.EqualTo(TimeSpan.FromMilliseconds(80)));
+        Assert.That(result.NextAllowedUtcTicks, Is.EqualTo(nextAllowedTicks));
+    }
+
+    [Test]
     public void ShouldDeferThumbnailRescueWorkerLaunch_通常救済はbusy中なら待機する()
     {
         bool result = MainWindow.ShouldDeferThumbnailRescueWorkerLaunch(

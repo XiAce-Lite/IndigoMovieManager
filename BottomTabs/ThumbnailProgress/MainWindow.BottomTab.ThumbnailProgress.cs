@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -20,6 +21,7 @@ namespace IndigoMovieManager
         // 一時対応: サムネイル作成中ダイアログ表示を止める。
         private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
         private const int ThumbnailProgressUiIntervalMs = 500;
+        private const int ThumbnailProgressSnapshotVisibleCoalesceMs = 120;
         private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
         private static readonly TimeSpan ThumbnailProgressTransientRescueWorkerDuration =
             TimeSpan.FromSeconds(5);
@@ -37,7 +39,9 @@ namespace IndigoMovieManager
         private ThumbnailProgressTabPresenter _thumbnailProgressTabPresenter;
         // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
         private int _thumbnailProgressSnapshotRefreshQueued;
+        private int _thumbnailProgressSnapshotRefreshDelayQueued;
         private int _thumbnailProgressSnapshotRefreshRequested;
+        private long _thumbnailProgressSnapshotRefreshNextAllowedUtcTicks;
         private long _thumbnailProgressLastAppliedSnapshotVersion = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
         private string _thumbnailProgressLastAppliedRescueWorkerSignature = "";
@@ -766,6 +770,13 @@ namespace IndigoMovieManager
             bool ShouldQueueFailureSync
         );
 
+        internal readonly record struct ThumbnailProgressSnapshotRefreshDecision(
+            bool ShouldQueueNow,
+            bool ShouldQueueDelayed,
+            TimeSpan Delay,
+            long NextAllowedUtcTicks
+        );
+
         private void ThumbnailProgressUiTimer_Tick(object sender, EventArgs e)
         {
             try
@@ -810,6 +821,33 @@ namespace IndigoMovieManager
             return new ThumbnailProgressUiTickBehavior(
                 ShouldRefreshUi: isThumbnailProgressTabVisibleOrSelected,
                 ShouldQueueFailureSync: true
+            );
+        }
+
+        // 表示中のイベントバーストは、最短間隔内なら遅延1本へ束ねてUI予約の雪崩を止める。
+        internal static ThumbnailProgressSnapshotRefreshDecision ResolveThumbnailProgressSnapshotRefreshDecision(
+            long nowUtcTicks,
+            long nextAllowedUtcTicks,
+            int coalesceMs
+        )
+        {
+            if (coalesceMs <= 0 || nextAllowedUtcTicks <= nowUtcTicks)
+            {
+                long nextAllowed =
+                    nowUtcTicks + TimeSpan.FromMilliseconds(Math.Max(0, coalesceMs)).Ticks;
+                return new ThumbnailProgressSnapshotRefreshDecision(
+                    ShouldQueueNow: true,
+                    ShouldQueueDelayed: false,
+                    Delay: TimeSpan.Zero,
+                    NextAllowedUtcTicks: nextAllowed
+                );
+            }
+
+            return new ThumbnailProgressSnapshotRefreshDecision(
+                ShouldQueueNow: false,
+                ShouldQueueDelayed: true,
+                Delay: TimeSpan.FromTicks(nextAllowedUtcTicks - nowUtcTicks),
+                NextAllowedUtcTicks: nextAllowedUtcTicks
             );
         }
 
@@ -1628,15 +1666,74 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshQueued, 0, 0) == 1)
+            {
+                return;
+            }
+
+            long nowUtcTicks = DateTime.UtcNow.Ticks;
+            ThumbnailProgressSnapshotRefreshDecision decision =
+                ResolveThumbnailProgressSnapshotRefreshDecision(
+                    nowUtcTicks,
+                    Interlocked.Read(ref _thumbnailProgressSnapshotRefreshNextAllowedUtcTicks),
+                    ThumbnailProgressSnapshotVisibleCoalesceMs
+            );
+            if (decision.ShouldQueueDelayed)
+            {
+                QueueDelayedThumbnailProgressSnapshotRefresh(decision.Delay);
+                return;
+            }
+
             if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)
             {
                 return;
             }
 
+            _ = Interlocked.Exchange(
+                ref _thumbnailProgressSnapshotRefreshNextAllowedUtcTicks,
+                decision.NextAllowedUtcTicks
+            );
             _ = Dispatcher.BeginInvoke(
                 DispatcherPriority.Background,
                 new Action(ProcessThumbnailProgressSnapshotRefreshQueue)
             );
+        }
+
+        private void QueueDelayedThumbnailProgressSnapshotRefresh(TimeSpan delay)
+        {
+            if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshDelayQueued, 1) == 1)
+            {
+                return;
+            }
+
+            _ = RunDelayedThumbnailProgressSnapshotRefreshAsync(delay);
+        }
+
+        private async Task RunDelayedThumbnailProgressSnapshotRefreshAsync(TimeSpan delay)
+        {
+            try
+            {
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"delayed snapshot refresh failed: {ex.Message}"
+                );
+            }
+            finally
+            {
+                _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshDelayQueued, 0);
+            }
+
+            if (Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshRequested, 0, 0) == 1)
+            {
+                RequestThumbnailProgressSnapshotRefresh();
+            }
         }
 
         private void ProcessThumbnailProgressSnapshotRefreshQueue()

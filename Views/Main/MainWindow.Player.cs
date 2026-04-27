@@ -55,8 +55,12 @@ namespace IndigoMovieManager
                 uxVolume.Text = ((int)(resolvedVolume * 100)).ToString();
             }
 
-            Properties.Settings.Default.PlayerVolume = resolvedVolume;
-            QueuePlayerVolumeSettingSave();
+            // WebView から同じ音量通知が返ってきた時は、保存キューだけ積み直さない。
+            if (Math.Abs(Properties.Settings.Default.PlayerVolume - resolvedVolume) > 0.0001d)
+            {
+                Properties.Settings.Default.PlayerVolume = resolvedVolume;
+                QueuePlayerVolumeSettingSave();
+            }
 
             if (!pushToWebView || uxWebVideoPlayer?.CoreWebView2 == null)
             {

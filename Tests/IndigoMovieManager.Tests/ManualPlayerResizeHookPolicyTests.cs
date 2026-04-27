@@ -37,6 +37,10 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(source, Does.Contain("private DispatcherTimer _playerVolumeSaveDebounceTimer;"));
         Assert.That(source, Does.Contain("private void QueuePlayerVolumeSettingSave()"));
         Assert.That(source, Does.Contain("private void PlayerVolumeSaveDebounceTimer_Tick("));
+        Assert.That(
+            source,
+            Does.Contain("Math.Abs(Properties.Settings.Default.PlayerVolume - resolvedVolume) > 0.0001d")
+        );
         Assert.That(source, Does.Contain("QueuePlayerVolumeSettingSave();"));
     }
 

@@ -1,8 +1,10 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-24
+最終更新日: 2026-04-27
 
 変更概要:
+- watch query-only 局所更新が full reload へ戻る理由を `changed_path_fallback` で残し、局所更新が効かない条件を観測して次の縮小対象を選べるようにした
+- WebView Player 停止・切替時に `user-priority` 解放待ちを残さないよう、WebView surface リセットで pending 解放を畳む方針を反映した
 - 全体計画の再構築に合わせ、実行レーンを `UIスレッド簡素化`、`diff-first UI`、`watcher/poll 境界安定化`、`起動 warm path`、`visible-first / Player`、`skin 別レーン` の順へ整理した
 - `Watcher.cs` の薄化は独立目標から外し、UI thread / queue / shutdown の詰まりを減らす時だけ進める方針へ変更した
 - `fire-and-forget` の増加ではなく、bounded drain とログを持つ queue / persister / scheduler へ寄せることを固定した

@@ -1,8 +1,10 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-24
+最終更新日: 2026-04-27
 
 変更概要:
+- watch query-only 局所更新が full reload へ戻る時の理由を `changed_path_fallback` としてログへ出し、`no-changed-movies` / `filter-unavailable` / `dup-hash-dirty` を実機ログだけで切り分けられるようにした
+- WebView Player の停止・切替時に pending の `user-priority` 解放を `ResetWebViewPlayerSurface()` で畳み、`NavigationCompleted` 後着時に watch / poll defer が残り続ける経路を塞いだ
 - 全体計画を再構築し、優先軸を `UIスレッドを空ける`、`全面再評価を減らす`、`入力優先を守る` の 3 本へ整理した
 - `Watcher.cs` 薄化は目的ではなく、UI thread / queue / shutdown の詰まりを減らすための手段として位置づけ直した
 - 本線の次手を `watcher shutdown / queue 境界の安定化`、`diff-first UI の残り潰し`、`起動 warm path`、`visible-first / Player表示` の順へ組み替えた
@@ -274,7 +276,7 @@
 2. UI スレッドを塞ぐ入口を、`search / reload / Player / watcher / thumbnail / skin` の順に棚卸しし、snapshot / queue / defer / background 化のどれで解くか決める
 3. watcher / poll / shutdown は、`FileSystemWatcher` 入力停止、queue complete、created pipeline drain、Everything poll 停止の順序を固定し、bounded drain と timeout log を持たせる
 4. watch 起点の UI 再読込は、差分反映優先でさらに縮小できる箇所を切り分ける
-  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は full reload へ戻る理由を明示し、`Hash` や重複検索のような危険条件だけを安全側へ戻す
+  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback / full reload 戻り理由ログまで。次は queue 圧縮で消える trigger / path 因果をログで追えるようにする
 5. visible-first / Player / 画像供給は、起動 first-page とユーザー操作を優先し、off-screen decode / metadata / 補助 UI bind を後ろへ送る
 6. 検索高速化は本線内では既存 `SearchService.FilterMovies(...)` 正本を維持し、投影 cache や比較コスト削減のような仕様を変えない範囲に留める。`SearchSidecar` は別リポ検証を継続する
 7. `skin` は別レーンとして、runtime bridge の terminal / `changeSkin` 境界固定と `refresh / catalog / DB` 分離を混ぜずに進める

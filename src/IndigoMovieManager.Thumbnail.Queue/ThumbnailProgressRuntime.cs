@@ -54,6 +54,22 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        // UIを先に戻した後、背景で数えた既存サムネ総数を後追い反映する。
+        public void ApplyInitialTotalCreatedCount(long initialTotalCreatedCount)
+        {
+            lock (stateLock)
+            {
+                long normalizedInitialTotalCreatedCount = Math.Max(0, initialTotalCreatedCount);
+                if (totalCreatedCount == normalizedInitialTotalCreatedCount)
+                {
+                    return;
+                }
+
+                totalCreatedCount = normalizedInitialTotalCreatedCount;
+                MarkStateDirty();
+            }
+        }
+
         // キュー投入ログは「動画名のみ」を最新N件で保持する。
         public void RecordEnqueue(QueueObj queueObj)
         {

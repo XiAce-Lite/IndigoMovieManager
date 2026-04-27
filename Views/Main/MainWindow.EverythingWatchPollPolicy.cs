@@ -91,6 +91,40 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // UI抑止や明示操作でpoll本体を逃がした周回では、待機間隔のためだけにDBへ寄らない。
+        internal static bool ShouldProbeEverythingWatchPollQueueLoad(
+            bool isDeferredByUiSuppression,
+            bool isDeferredByUserPriority
+        )
+        {
+            return !isDeferredByUiSuppression && !isDeferredByUserPriority;
+        }
+
+        // 明示操作中や再生中は、poll を細かく刻まず calm 間隔へ寄せて背後 wake-up を減らす。
+        internal static int ApplyEverythingWatchPollInteractionDelayPolicy(
+            int delayMs,
+            bool isDeferredByUiSuppression,
+            bool isDeferredByUserPriority,
+            bool isPlayerPlaybackActive
+        )
+        {
+            if (delayMs <= 0)
+            {
+                delayMs = EverythingWatchPollIntervalMs;
+            }
+
+            if (
+                !isDeferredByUiSuppression
+                && !isDeferredByUserPriority
+                && !isPlayerPlaybackActive
+            )
+            {
+                return delayMs;
+            }
+
+            return Math.Max(delayMs, EverythingWatchPollIntervalCalmMs);
+        }
+
         // 混雑度と直近の静かさを見て、Everything poll の待機間隔を決める。
         private int ResolveEverythingWatchPollDelayFromState(int queueActiveCount)
         {

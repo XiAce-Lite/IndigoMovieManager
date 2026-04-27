@@ -1203,20 +1203,32 @@ namespace IndigoMovieManager
             {
                 try
                 {
+                    bool isDeferredByUiSuppression = false;
+                    bool isDeferredByUserPriority = false;
                     if (IsWatchSuppressedByUi())
                     {
                         MarkWatchWorkDeferredWhileSuppressed("everything-poll");
+                        isDeferredByUiSuppression = true;
                     }
                     else if (TryDeferEverythingWatchPollForUserPriority())
                     {
                         // 明示操作が終わった後の catch-up へ任せ、この周回では入口判定まで進めない。
+                        isDeferredByUserPriority = true;
                     }
                     else if (ShouldRunEverythingWatchPollPolicy())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
 
-                    int delayMs = ResolveEverythingWatchPollDelayMs();
+                    int delayMs = ResolveEverythingWatchPollDelayMs(
+                        shouldProbeQueueLoad: ShouldProbeEverythingWatchPollQueueLoad(
+                            isDeferredByUiSuppression,
+                            isDeferredByUserPriority
+                        ),
+                        isDeferredByUiSuppression: isDeferredByUiSuppression,
+                        isDeferredByUserPriority: isDeferredByUserPriority,
+                        isPlayerPlaybackActive: IsPlaying
+                    );
                     await Task.Delay(delayMs, cts);
                 }
                 catch (OperationCanceledException)
@@ -1245,15 +1257,30 @@ namespace IndigoMovieManager
         /// サムネイルキュー負荷に応じてEverythingポーリング間隔を動的に調整する。
         /// キュー残量が多い時はポーリングを15秒に延ばし、CPUの空振り消費を抑える。
         /// </summary>
-        private int ResolveEverythingWatchPollDelayMs()
+        private int ResolveEverythingWatchPollDelayMs(
+            bool shouldProbeQueueLoad = true,
+            bool isDeferredByUiSuppression = false,
+            bool isDeferredByUserPriority = false,
+            bool isPlayerPlaybackActive = false
+        )
         {
             int delayMs = EverythingWatchPollIntervalMs;
             try
             {
-                var queueDbService = ResolveCurrentQueueDbService();
-                int activeCount = queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId)
-                    ?? 0;
+                int activeCount = 0;
+                if (shouldProbeQueueLoad)
+                {
+                    var queueDbService = ResolveCurrentQueueDbService();
+                    activeCount =
+                        queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId) ?? 0;
+                }
                 delayMs = ResolveEverythingWatchPollDelayFromState(activeCount);
+                delayMs = ApplyEverythingWatchPollInteractionDelayPolicy(
+                    delayMs,
+                    isDeferredByUiSuppression,
+                    isDeferredByUserPriority,
+                    isPlayerPlaybackActive
+                );
             }
             catch (Exception ex)
             {

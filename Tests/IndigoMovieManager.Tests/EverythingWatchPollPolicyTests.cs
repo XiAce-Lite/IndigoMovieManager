@@ -170,6 +170,84 @@ public sealed class EverythingWatchPollPolicyTests
     }
 
     [Test]
+    public void ShouldProbeEverythingWatchPollQueueLoad_poll延期中はFalseを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldProbeEverythingWatchPollQueueLoad(
+                isDeferredByUiSuppression: true,
+                isDeferredByUserPriority: false
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldProbeEverythingWatchPollQueueLoad(
+                isDeferredByUiSuppression: false,
+                isDeferredByUserPriority: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldProbeEverythingWatchPollQueueLoad(
+                isDeferredByUiSuppression: false,
+                isDeferredByUserPriority: false
+            ),
+            Is.True
+        );
+    }
+
+    [Test]
+    public void ApplyEverythingWatchPollInteractionDelayPolicy_通常時は遅延を変えない()
+    {
+        int delayMs = MainWindow.ApplyEverythingWatchPollInteractionDelayPolicy(
+            delayMs: 3000,
+            isDeferredByUiSuppression: false,
+            isDeferredByUserPriority: false,
+            isPlayerPlaybackActive: false
+        );
+
+        Assert.That(delayMs, Is.EqualTo(3000));
+    }
+
+    [Test]
+    public void ApplyEverythingWatchPollInteractionDelayPolicy_UI操作中はcalm間隔まで延長する()
+    {
+        int delayMs = MainWindow.ApplyEverythingWatchPollInteractionDelayPolicy(
+            delayMs: 3000,
+            isDeferredByUiSuppression: true,
+            isDeferredByUserPriority: false,
+            isPlayerPlaybackActive: false
+        );
+
+        Assert.That(delayMs, Is.EqualTo(9000));
+    }
+
+    [Test]
+    public void ApplyEverythingWatchPollInteractionDelayPolicy_再生中はcalm間隔まで延長する()
+    {
+        int delayMs = MainWindow.ApplyEverythingWatchPollInteractionDelayPolicy(
+            delayMs: 3000,
+            isDeferredByUiSuppression: false,
+            isDeferredByUserPriority: false,
+            isPlayerPlaybackActive: true
+        );
+
+        Assert.That(delayMs, Is.EqualTo(9000));
+    }
+
+    [Test]
+    public void ApplyEverythingWatchPollInteractionDelayPolicy_既に長い遅延は維持する()
+    {
+        int delayMs = MainWindow.ApplyEverythingWatchPollInteractionDelayPolicy(
+            delayMs: 15000,
+            isDeferredByUiSuppression: false,
+            isDeferredByUserPriority: true,
+            isPlayerPlaybackActive: true
+        );
+
+        Assert.That(delayMs, Is.EqualTo(15000));
+    }
+
+    [Test]
     public void ShouldRunEverythingWatchPoll_eligibleなwatchがあれば動かす()
     {
         string dbPath = System.IO.Path.GetTempFileName();

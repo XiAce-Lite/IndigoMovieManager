@@ -41,6 +41,21 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
+    public void PlayerVolume_保存値リセット時は起動時に50へ戻す()
+    {
+        string playerSource = GetMainWindowPlayerSourceText();
+        string windowSource = GetRepoText("Views", "Main", "MainWindow.xaml.cs");
+
+        Assert.That(playerSource, Does.Contain("private const double DefaultPlayerVolume = 0.5d;"));
+        Assert.That(playerSource, Does.Contain("private static double ResolveSavedPlayerVolumeSetting(double volume)"));
+        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;"));
+        Assert.That(
+            windowSource,
+            Does.Contain("ResolveSavedPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume)")
+        );
+    }
+
+    [Test]
     public void WebViewPlayer_ホスト音量適用前の既定音量通知を抑止する()
     {
         string mainWindowPlayerSource = GetMainWindowPlayerSourceText();
@@ -63,6 +78,7 @@ public sealed class ManualPlayerResizeHookPolicyTests
         string selectionSource = GetMainWindowSelectionSourceText();
 
         Assert.That(selectionSource, Does.Contain("SelectPlayerThumbnailRecordWithoutScroll(label, record);"));
+        Assert.That(selectionSource, Does.Contain("syncPlayerSelection: false"));
         Assert.That(selectionSource, Does.Contain("return;"));
         Assert.That(
             selectionSource,
@@ -72,6 +88,28 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(selectionSource, Does.Contain("SyncPlayerThumbnailSelectionAcrossViews(sourceList, record);"));
         Assert.That(selectionSource, Does.Contain("ShowExtensionDetail(record);"));
         Assert.That(selectionSource, Does.Contain("ShowTagEditor(record);"));
+
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(upperTabPlayerSource, Does.Contain("bool syncPlayerSelection = true"));
+        Assert.That(upperTabPlayerSource, Does.Contain("if (syncPlayerSelection)"));
+    }
+
+    [Test]
+    public void PlayerThumbnailViewMode_同一モード再選択では再スクロールしない()
+    {
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (_isPlayerThumbnailCompactViewEnabled == enabled)")
+        );
+        Assert.That(upperTabPlayerSource, Does.Contain("return;"));
+        Assert.That(upperTabPlayerSource, Does.Contain("GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("RequestUpperTabVisibleRangeRefresh(immediate: true, reason: \"player-view-mode\");")
+        );
     }
 
     private static string GetMainWindowPlayerSourceText()

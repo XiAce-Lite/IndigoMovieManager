@@ -16,6 +16,7 @@ namespace IndigoMovieManager
         private const double ManualPlayerHorizontalPadding = 96d;
         private const double ManualPlayerVerticalPadding = 120d;
         private const double ManualPlayerFallbackControllerHeight = 72d;
+        private const double DefaultPlayerVolume = 0.5d;
         private bool _isTimeSliderSyncingFromPlayer;
         private bool _isTimeSliderDragging;
         private bool _isManualPlayerResizeTrackingHooked;
@@ -27,10 +28,17 @@ namespace IndigoMovieManager
         {
             if (double.IsNaN(volume) || double.IsInfinity(volume))
             {
-                return 0.5d;
+                return DefaultPlayerVolume;
             }
 
             return Math.Max(0d, Math.Min(1d, volume));
+        }
+
+        // 保存値が初期化落ちして 0 へ戻った時は、起動時だけ既定の 50% へ戻す。
+        private static double ResolveSavedPlayerVolumeSetting(double volume)
+        {
+            double resolvedVolume = ClampPlayerVolumeSetting(volume);
+            return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;
         }
 
         // 画面表示と保存値を同じ音量へ寄せ、次に開く動画にもそのまま引き継ぐ。

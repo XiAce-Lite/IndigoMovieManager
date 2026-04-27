@@ -249,6 +249,41 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(upperTabPlayerSource, Does.Contain("EndUserPriorityWork(\"player\");"));
     }
 
+    [Test]
+    public void ResetWebViewPlayerSurface_WebView停止時もpending_user_priorityを解除する()
+    {
+        // WebView の NavigationCompleted が後着しても、reset 側で優先区間を確実に畳む。
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+        string resetMethod = GetMethodBlock(
+            upperTabPlayerSource,
+            "private void ResetWebViewPlayerSurface()"
+        );
+        string openMovieMethod = GetMethodBlock(
+            upperTabPlayerSource,
+            "private async Task OpenMovieInPlayerTabAsync("
+        );
+
+        int webViewActiveCheckIndex = openMovieMethod.IndexOf(
+            "if (_isWebViewPlayerActive)",
+            StringComparison.Ordinal
+        );
+        int resetCallIndex = openMovieMethod.IndexOf(
+            "ResetWebViewPlayerSurface();",
+            StringComparison.Ordinal
+        );
+
+        Assert.That(webViewActiveCheckIndex, Is.GreaterThanOrEqualTo(0));
+        Assert.That(resetCallIndex, Is.GreaterThan(webViewActiveCheckIndex));
+        Assert.That(resetMethod, Does.Contain("_hasPendingWebViewPlaybackRequest = false;"));
+        Assert.That(resetMethod, Does.Contain("_isWebViewPlayerActive = false;"));
+        Assert.That(resetMethod, Does.Contain("_pendingWebViewNavigationId = 0;"));
+        Assert.That(resetMethod, Does.Contain("ReleasePendingPlayerUserPriorityWork();"));
+        Assert.That(
+            resetMethod.IndexOf("ReleasePendingPlayerUserPriorityWork();", StringComparison.Ordinal),
+            Is.LessThan(resetMethod.IndexOf("if (uxWebVideoPlayer == null)", StringComparison.Ordinal))
+        );
+    }
+
     private static string GetMainWindowPlayerSourceText()
     {
         return GetRepoText("Views", "Main", "MainWindow.Player.cs");
@@ -284,6 +319,35 @@ public sealed class ManualPlayerResizeHookPolicyTests
         }
 
         Assert.Fail($"{Path.Combine(relativePathParts)} の位置を repo root から解決できませんでした。");
+        return string.Empty;
+    }
+
+    private static string GetMethodBlock(string source, string signature)
+    {
+        int start = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.That(start, Is.GreaterThanOrEqualTo(0), $"{signature} が見つかりません。");
+
+        int bodyStart = source.IndexOf('{', start);
+        Assert.That(bodyStart, Is.GreaterThanOrEqualTo(0), $"{signature} の本文開始が見つかりません。");
+
+        int depth = 0;
+        for (int index = bodyStart; index < source.Length; index++)
+        {
+            if (source[index] == '{')
+            {
+                depth++;
+            }
+            else if (source[index] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return source.Substring(start, index - start + 1);
+                }
+            }
+        }
+
+        Assert.Fail($"{signature} の本文終了が見つかりません。");
         return string.Empty;
     }
 }

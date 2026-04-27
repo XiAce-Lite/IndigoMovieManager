@@ -1184,6 +1184,20 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShowThumbnailUserActionPopup_背景スレッドから同期InvokeでUI完了待ちしない()
+    {
+        string source = GetRepoText("Thumbnail", "MainWindow.ThumbnailUserActionContext.cs");
+        string popupMethod = GetMethodBlock(
+            source,
+            "private void ShowThumbnailUserActionPopup("
+        );
+
+        Assert.That(popupMethod, Does.Not.Contain("Dispatcher.Invoke("));
+        Assert.That(popupMethod, Does.Contain("PostThumbnailUserActionUiNotification(showPopup);"));
+        Assert.That(popupMethod, Does.Contain("PostThumbnailUserActionUiNotification(showOverlay);"));
+    }
+
+    [Test]
     public void BuildThumbnailProgressRescueLaunchObservationText_一時優先の待機付き要求は優先起動表示になる()
     {
         string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(
@@ -1444,5 +1458,52 @@ public sealed class MissingThumbnailRescuePolicyTests
         PropertyInfo property = exceptionType.GetProperty("FailureReason")!;
         property.SetValue(exception, failureReason);
         return (Exception)exception;
+    }
+
+    private static string GetRepoText(params string[] relativePathParts)
+    {
+        DirectoryInfo directory = new(TestContext.CurrentContext.TestDirectory);
+        while (directory != null)
+        {
+            string candidate = Path.Combine([directory.FullName, .. relativePathParts]);
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"{Path.Combine(relativePathParts)} の位置を repo root から解決できませんでした。");
+        return string.Empty;
+    }
+
+    private static string GetMethodBlock(string source, string signature)
+    {
+        int start = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.That(start, Is.GreaterThanOrEqualTo(0), $"{signature} が見つかりません。");
+
+        int bodyStart = source.IndexOf('{', start);
+        Assert.That(bodyStart, Is.GreaterThanOrEqualTo(0), $"{signature} の本文開始が見つかりません。");
+
+        int depth = 0;
+        for (int index = bodyStart; index < source.Length; index++)
+        {
+            if (source[index] == '{')
+            {
+                depth++;
+            }
+            else if (source[index] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return source.Substring(start, index - start + 1);
+                }
+            }
+        }
+
+        Assert.Fail($"{signature} の本文終了が見つかりません。");
+        return string.Empty;
     }
 }

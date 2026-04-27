@@ -793,6 +793,46 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ResolveThumbnailProgressSnapshotRefreshDecision_許可時刻を過ぎていれば即時予約する()
+    {
+        long nowTicks = new DateTime(2026, 4, 27, 10, 0, 0, DateTimeKind.Utc).Ticks;
+
+        MainWindow.ThumbnailProgressSnapshotRefreshDecision result =
+            MainWindow.ResolveThumbnailProgressSnapshotRefreshDecision(
+                nowTicks,
+                nextAllowedUtcTicks: nowTicks - TimeSpan.FromMilliseconds(1).Ticks,
+                coalesceMs: 120
+            );
+
+        Assert.That(result.ShouldQueueNow, Is.True);
+        Assert.That(result.ShouldQueueDelayed, Is.False);
+        Assert.That(result.Delay, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(
+            result.NextAllowedUtcTicks,
+            Is.EqualTo(nowTicks + TimeSpan.FromMilliseconds(120).Ticks)
+        );
+    }
+
+    [Test]
+    public void ResolveThumbnailProgressSnapshotRefreshDecision_間隔内イベントは遅延1本へ寄せる()
+    {
+        long nowTicks = new DateTime(2026, 4, 27, 10, 0, 0, DateTimeKind.Utc).Ticks;
+        long nextAllowedTicks = nowTicks + TimeSpan.FromMilliseconds(80).Ticks;
+
+        MainWindow.ThumbnailProgressSnapshotRefreshDecision result =
+            MainWindow.ResolveThumbnailProgressSnapshotRefreshDecision(
+                nowTicks,
+                nextAllowedTicks,
+                coalesceMs: 120
+            );
+
+        Assert.That(result.ShouldQueueNow, Is.False);
+        Assert.That(result.ShouldQueueDelayed, Is.True);
+        Assert.That(result.Delay, Is.EqualTo(TimeSpan.FromMilliseconds(80)));
+        Assert.That(result.NextAllowedUtcTicks, Is.EqualTo(nextAllowedTicks));
+    }
+
+    [Test]
     public void ShouldDeferThumbnailRescueWorkerLaunch_通常救済はbusy中なら待機する()
     {
         bool result = MainWindow.ShouldDeferThumbnailRescueWorkerLaunch(
@@ -1144,6 +1184,20 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShowThumbnailUserActionPopup_背景スレッドから同期InvokeでUI完了待ちしない()
+    {
+        string source = GetRepoText("Thumbnail", "MainWindow.ThumbnailUserActionContext.cs");
+        string popupMethod = GetMethodBlock(
+            source,
+            "private void ShowThumbnailUserActionPopup("
+        );
+
+        Assert.That(popupMethod, Does.Not.Contain("Dispatcher.Invoke("));
+        Assert.That(popupMethod, Does.Contain("PostThumbnailUserActionUiNotification(showPopup);"));
+        Assert.That(popupMethod, Does.Contain("PostThumbnailUserActionUiNotification(showOverlay);"));
+    }
+
+    [Test]
     public void BuildThumbnailProgressRescueLaunchObservationText_一時優先の待機付き要求は優先起動表示になる()
     {
         string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(
@@ -1404,5 +1458,52 @@ public sealed class MissingThumbnailRescuePolicyTests
         PropertyInfo property = exceptionType.GetProperty("FailureReason")!;
         property.SetValue(exception, failureReason);
         return (Exception)exception;
+    }
+
+    private static string GetRepoText(params string[] relativePathParts)
+    {
+        DirectoryInfo directory = new(TestContext.CurrentContext.TestDirectory);
+        while (directory != null)
+        {
+            string candidate = Path.Combine([directory.FullName, .. relativePathParts]);
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"{Path.Combine(relativePathParts)} の位置を repo root から解決できませんでした。");
+        return string.Empty;
+    }
+
+    private static string GetMethodBlock(string source, string signature)
+    {
+        int start = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.That(start, Is.GreaterThanOrEqualTo(0), $"{signature} が見つかりません。");
+
+        int bodyStart = source.IndexOf('{', start);
+        Assert.That(bodyStart, Is.GreaterThanOrEqualTo(0), $"{signature} の本文開始が見つかりません。");
+
+        int depth = 0;
+        for (int index = bodyStart; index < source.Length; index++)
+        {
+            if (source[index] == '{')
+            {
+                depth++;
+            }
+            else if (source[index] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return source.Substring(start, index - start + 1);
+                }
+            }
+        }
+
+        Assert.Fail($"{signature} の本文終了が見つかりません。");
+        return string.Empty;
     }
 }

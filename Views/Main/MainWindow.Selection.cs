@@ -85,7 +85,10 @@ namespace IndigoMovieManager
             {
                 if (sourceList != null)
                 {
-                    sourceList.SelectedItem = record;
+                    if (!ReferenceEquals(sourceList.SelectedItem, record))
+                    {
+                        sourceList.SelectedItem = record;
+                    }
                 }
 
                 SyncPlayerThumbnailSelectionAcrossViews(sourceList, record);

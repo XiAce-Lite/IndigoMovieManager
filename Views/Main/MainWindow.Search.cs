@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,6 +13,7 @@ namespace IndigoMovieManager
     {
         private bool _suppressSearchBoxTextChangedHandling = false;
         private SearchExecutionController _searchExecutor;
+        private long _searchHistoryRefreshStamp;
 
         // =================================================================================
         // 検索に関する UI イベント処理 (View層のロジック)
@@ -87,8 +89,8 @@ namespace IndigoMovieManager
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
-                // フォーカス離脱時の実績記録は service へ寄せ、UI は発火条件だけを持つ。
-                SearchHistoryService.RecordSearchUsage(
+                // フォーカス離脱時の実績記録は背景へ送り、UIイベントをDB I/Oで止めない。
+                QueueSearchHistoryUsageRecord(
                     MainVM.DbInfo.DBFullPath,
                     MainVM.DbInfo.SearchKeyword
                 );
@@ -280,12 +282,105 @@ namespace IndigoMovieManager
         private void PersistSearchHistoryAfterSearch(string text)
         {
             string keyword = text ?? "";
-            SearchHistoryService.PersistSuccessfulSearch(
-                MainVM?.DbInfo?.DBFullPath,
-                keyword,
-                MainVM?.DbInfo?.SearchCount ?? 0
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            int searchCount = MainVM?.DbInfo?.SearchCount ?? 0;
+            string currentText = SearchBox?.Text ?? "";
+            QueueSearchHistoryRefresh(dbFullPath, keyword, searchCount, currentText);
+        }
+
+        private void QueueSearchHistoryRefresh(
+            string dbFullPath,
+            string keyword,
+            int searchCount,
+            string currentText
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(dbFullPath)
+                || string.IsNullOrWhiteSpace(keyword)
+                || searchCount <= 0
+            )
+            {
+                return;
+            }
+
+            long refreshStamp = Interlocked.Increment(ref _searchHistoryRefreshStamp);
+            _ = Task.Run(
+                    () =>
+                    {
+                        SearchHistoryService.PersistSuccessfulSearch(
+                            dbFullPath,
+                            keyword,
+                            searchCount
+                        );
+                        return SearchHistoryService.LoadLatestHistory(dbFullPath);
+                    }
+                )
+                .ContinueWith(
+                    task =>
+                    {
+                        if (task.IsFaulted)
+                        {
+                            DebugRuntimeLog.Write(
+                                "search-history",
+                                $"history refresh failed: db='{dbFullPath}' keyword='{keyword}' err='{task.Exception?.GetBaseException().Message}'"
+                            );
+                            return;
+                        }
+
+                        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                        {
+                            return;
+                        }
+
+                        _ = Dispatcher.BeginInvoke(
+                            new Action(
+                                () =>
+                                {
+                                    if (
+                                        refreshStamp != _searchHistoryRefreshStamp
+                                        || !AreSameMainDbPath(
+                                            dbFullPath,
+                                            MainVM?.DbInfo?.DBFullPath ?? ""
+                                        )
+                                    )
+                                    {
+                                        return;
+                                    }
+
+                                    ApplySearchHistoryRecords(task.Result, currentText);
+                                }
+                            ),
+                            DispatcherPriority.Background
+                        );
+                    },
+                    TaskScheduler.Default
+                );
+        }
+
+        private void QueueSearchHistoryUsageRecord(string dbFullPath, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath) || string.IsNullOrWhiteSpace(keyword))
+            {
+                return;
+            }
+
+            _ = Task.Run(
+                () =>
+                {
+                    try
+                    {
+                        SearchHistoryService.RecordSearchUsage(dbFullPath, keyword);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugRuntimeLog.Write(
+                            "search-history",
+                            $"history usage record failed: db='{dbFullPath}' keyword='{keyword}' err='{ex.Message}'"
+                        );
+                    }
+                }
             );
-            GetHistoryTable(MainVM.DbInfo.DBFullPath);
         }
 
         // 検索 UI が複数になっても、本体検索の入口は 1 つへ寄せる。
@@ -348,6 +443,28 @@ namespace IndigoMovieManager
         {
             bool shouldReload = IsStartupFeedPartialActive;
             return FilterAndSortAsync(sortId, shouldReload);
+        }
+
+        public async Task ApplySearchKeywordFromLinkAsync(string keyword)
+        {
+            // タグ・詳細・ブックマークリンク検索を検索正本へ合流させ、
+            // 通常時のDB再読込を避ける。
+            try
+            {
+                await SearchExecutor.ExecuteAsync(keyword ?? "", syncSearchText: true);
+                // 既に検索欄にフォーカスがある時は再要求しない。
+                if (SearchBox != null && !SearchBox.IsKeyboardFocusWithin)
+                {
+                    SearchBox.Focus();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"link search failed: {ex.GetType().Name}: {ex.Message}"
+                );
+            }
         }
 
         // 変換途中の記号入力や部分ロード中は既存の確定検索へ寄せ、通常時だけ debounce で流す。

@@ -32,15 +32,21 @@ namespace IndigoMovieManager.UserControls
             }
         }
 
-        private void FileNameLink_Click(object sender, RoutedEventArgs e)
+        private async void FileNameLink_Click(object sender, RoutedEventArgs e)
         {
-            // ブックマーク名クリック時はSearchBoxへ名前をセットする。
+            // ブックマーク名クリック時も検索正本へ合流させ、
+            // SearchBox直代入由来の余計なイベント連鎖を減らす。
             MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)
             {
                 MovieRecords mv = item.DataContext as MovieRecords;
-                ownerWindow.SearchBox.Text = mv.Movie_Body;
+                if (mv == null)
+                {
+                    return;
+                }
+
+                await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Movie_Body ?? "");
             }
         }
 

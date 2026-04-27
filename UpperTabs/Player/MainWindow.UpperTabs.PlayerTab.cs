@@ -37,9 +37,12 @@ namespace IndigoMovieManager
         private bool _pendingWebViewMute;
         private bool _isWebViewPlayerActive;
         private bool _isWebViewPlayerBridgeRegistered;
+        private bool _isPlayerUserPriorityReleasePending;
         private bool _isHandlingWebViewNativeFullscreenRequest;
         private bool _isSyncingDetachedWindowDomFullscreen;
         private Task<CoreWebView2Environment> _playerWebViewEnvironmentTask;
+        private DispatcherOperation _playerBackgroundYieldOperation;
+        private ulong _pendingWebViewNavigationId;
         private string _currentPlayerMoviePath = "";
         private string _currentWebViewPlayerPath = "";
 
@@ -101,19 +104,38 @@ namespace IndigoMovieManager
             return items;
         }
 
-        private void SelectUpperTabPlayerMovieRecord(MovieRecords record)
+        private bool SelectUpperTabPlayerMovieRecord(MovieRecords record)
         {
             if (record == null)
             {
-                return;
+                return false;
             }
 
+            bool selectionChanged = false;
+            bool activeListSelectionChanged = false;
+            ListView activeList = GetUpperTabPlayerList();
             foreach (ListView list in GetAllUpperTabPlayerLists())
             {
+                if (ReferenceEquals(list.SelectedItem, record))
+                {
+                    continue;
+                }
+
                 list.SelectedItem = record;
+                selectionChanged = true;
+                if (ReferenceEquals(list, activeList))
+                {
+                    activeListSelectionChanged = true;
+                }
             }
 
-            GetUpperTabPlayerList()?.ScrollIntoView(record);
+            if (activeListSelectionChanged)
+            {
+                // 表示中リストの選択が変わった時だけ再スクロールし、裏側List同期だけでは積み直さない。
+                GetUpperTabPlayerList()?.ScrollIntoView(record);
+            }
+
+            return selectionChanged;
         }
 
         // プレイヤータブへ飛ばす時だけ、選択イベントの自動再生を一時停止して狙った動画へ揃える。
@@ -125,16 +147,20 @@ namespace IndigoMovieManager
             }
 
             _suppressPlayerThumbnailSelectionChanged = true;
+            bool selectionChanged = false;
             try
             {
-                SelectUpperTabPlayerMovieRecord(record);
+                selectionChanged = SelectUpperTabPlayerMovieRecord(record);
             }
             finally
             {
                 _suppressPlayerThumbnailSelectionChanged = false;
             }
 
-            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+            if (selectionChanged)
+            {
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+            }
         }
 
         // プレイヤータブ選択時は先頭選択を揃えたうえで、左ペインへ再生内容を同期する。
@@ -243,82 +269,97 @@ namespace IndigoMovieManager
                 return;
             }
 
-            EnsureManualPlayerResizeTrackingHooked();
-            UpdatePlayerTabLayoutMode();
-
-            if (!ReferenceEquals(Tabs?.SelectedItem, TabPlayer))
+            ReleasePendingPlayerUserPriorityWork();
+            BeginUserPriorityWork("player");
+            bool releaseUserPriorityOnExit = true;
+            try
             {
-                _suppressPlayerTabActivationAutoOpen = true;
-                try
+                EnsureManualPlayerResizeTrackingHooked();
+                UpdatePlayerTabLayoutMode();
+
+                if (!ReferenceEquals(Tabs?.SelectedItem, TabPlayer))
+                {
+                    _suppressPlayerTabActivationAutoOpen = true;
+                    try
+                    {
+                        if (syncPlayerSelection)
+                        {
+                            SyncUpperTabPlayerSelection(movie);
+                        }
+
+                        SelectUpperTabByFixedIndex(PlayerTabIndex);
+                        await WaitForPlayerDispatcherBackgroundAsync();
+                    }
+                    finally
+                    {
+                        _suppressPlayerTabActivationAutoOpen = false;
+                    }
+                }
+                else
                 {
                     if (syncPlayerSelection)
                     {
                         SyncUpperTabPlayerSelection(movie);
                     }
+                }
 
-                    SelectUpperTabByFixedIndex(PlayerTabIndex);
-                    await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
-                }
-                finally
+                // プレイヤータブの通常再生は WebView2 を正面採用し、
+                // 手動サムネ位置合わせだけ従来の MediaElement を残す。
+                if (ShouldUseWebViewPlayerForPlayerTab(movie.Movie_Path, focusTimeSlider))
                 {
-                    _suppressPlayerTabActivationAutoOpen = false;
+                    releaseUserPriorityOnExit = !await OpenMovieInWebViewPlayerAsync(
+                        movie,
+                        startMilliseconds,
+                        playImmediately,
+                        mute
+                    );
+                    return;
                 }
-            }
-            else
-            {
-                if (syncPlayerSelection)
-                {
-                    SyncUpperTabPlayerSelection(movie);
-                }
-            }
 
-            // プレイヤータブの通常再生は WebView2 を正面採用し、
-            // 手動サムネ位置合わせだけ従来の MediaElement を残す。
-            if (ShouldUseWebViewPlayerForPlayerTab(movie.Movie_Path, focusTimeSlider))
-            {
-                await OpenMovieInWebViewPlayerAsync(
-                    movie,
+                if (_isWebViewPlayerActive)
+                {
+                    ResetWebViewPlayerSurface();
+                }
+
+                ShowPlayerSurface();
+                StopDispatcherTimerSafely(timer, nameof(timer));
+                RememberPendingPlayerPlaybackRequest(
                     startMilliseconds,
                     playImmediately,
-                    mute
+                    mute,
+                    focusTimeSlider
                 );
-                return;
-            }
 
-            if (_isWebViewPlayerActive)
+                bool sourceChanged =
+                    !string.Equals(
+                        _currentPlayerMoviePath,
+                        movie.Movie_Path,
+                        System.StringComparison.OrdinalIgnoreCase
+                    )
+                    || uxVideoPlayer.Source == null;
+                if (sourceChanged)
+                {
+                    uxVideoPlayer.Stop();
+                    uxVideoPlayer.Source = new System.Uri(movie.Movie_Path);
+                    _currentPlayerMoviePath = movie.Movie_Path;
+                    MarkPlayerUserPriorityReleasePending();
+                    releaseUserPriorityOnExit = false;
+                    return;
+                }
+
+                await ApplyPendingPlayerPlaybackRequestAsync();
+            }
+            finally
             {
-                ResetWebViewPlayerSurface();
+                if (releaseUserPriorityOnExit)
+                {
+                    EndUserPriorityWork("player");
+                }
             }
-
-            ShowPlayerSurface();
-            StopDispatcherTimerSafely(timer, nameof(timer));
-            RememberPendingPlayerPlaybackRequest(
-                startMilliseconds,
-                playImmediately,
-                mute,
-                focusTimeSlider
-            );
-
-            bool sourceChanged =
-                !string.Equals(
-                    _currentPlayerMoviePath,
-                    movie.Movie_Path,
-                    System.StringComparison.OrdinalIgnoreCase
-                )
-                || uxVideoPlayer.Source == null;
-            if (sourceChanged)
-            {
-                uxVideoPlayer.Stop();
-                uxVideoPlayer.Source = new System.Uri(movie.Movie_Path);
-                _currentPlayerMoviePath = movie.Movie_Path;
-                return;
-            }
-
-            await ApplyPendingPlayerPlaybackRequestAsync();
         }
 
         // MediaElement が苦手な形式だけ、Chromium の HTML5 video へ切り替えて再生互換を確保する。
-        private async Task OpenMovieInWebViewPlayerAsync(
+        private async Task<bool> OpenMovieInWebViewPlayerAsync(
             MovieRecords movie,
             int startMilliseconds,
             bool playImmediately,
@@ -327,12 +368,12 @@ namespace IndigoMovieManager
         {
             if (movie == null || string.IsNullOrWhiteSpace(movie.Movie_Path) || uxWebVideoPlayer == null)
             {
-                return;
+                return false;
             }
 
             if (!await EnsureWebVideoPlayerReadyAsync())
             {
-                return;
+                return false;
             }
 
             _isWebViewPlayerActive = true;
@@ -365,10 +406,61 @@ namespace IndigoMovieManager
             {
                 uxWebVideoPlayer.Source = new System.Uri(movie.Movie_Path);
                 _currentWebViewPlayerPath = movie.Movie_Path;
-                return;
+                MarkPlayerUserPriorityReleasePending();
+                return true;
             }
 
             await ApplyPendingWebViewPlaybackRequestAsync();
+            return false;
+        }
+
+        private void MarkPlayerUserPriorityReleasePending()
+        {
+            _isPlayerUserPriorityReleasePending = true;
+        }
+
+        private void ReleasePendingPlayerUserPriorityWork()
+        {
+            if (!_isPlayerUserPriorityReleasePending)
+            {
+                return;
+            }
+
+            _isPlayerUserPriorityReleasePending = false;
+            EndUserPriorityWork("player");
+        }
+
+        // 同一タイミングの no-op Dispatcher 待機は1本へ畳み、選択連打時の積み過ぎを抑える。
+        private async Task WaitForPlayerDispatcherBackgroundAsync()
+        {
+            if (Dispatcher == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            DispatcherOperation pendingOperation = _playerBackgroundYieldOperation;
+            if (
+                pendingOperation == null
+                || pendingOperation.Status == DispatcherOperationStatus.Completed
+                || pendingOperation.Status == DispatcherOperationStatus.Aborted
+            )
+            {
+                pendingOperation = Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                _playerBackgroundYieldOperation = pendingOperation;
+            }
+
+            try
+            {
+                await pendingOperation.Task;
+            }
+            catch (InvalidOperationException)
+            {
+                // shutdown 競合時はここで止めず、次の操作へ進める。
+            }
+            catch (TaskCanceledException)
+            {
+                // Dispatcher 側で中断された待機は安全に捨てる。
+            }
         }
 
         // Source 差し替えと MediaOpened の間でも、再生要求を落とさず持ち運ぶ。
@@ -388,71 +480,90 @@ namespace IndigoMovieManager
 
         private async Task ApplyPendingPlayerPlaybackRequestAsync()
         {
+            bool shouldReleaseUserPriority =
+                _hasPendingPlayerPlaybackRequest || _isPlayerUserPriorityReleasePending;
             if (!_hasPendingPlayerPlaybackRequest || uxVideoPlayer == null)
             {
+                if (shouldReleaseUserPriority)
+                {
+                    ReleasePendingPlayerUserPriorityWork();
+                }
                 return;
             }
 
-            int startMilliseconds = _pendingPlayerStartMilliseconds;
-            bool playImmediately = _pendingPlayerPlayImmediately;
-            bool mute = _pendingPlayerMute;
-            bool focusTimeSlider = _pendingPlayerFocusTimeSlider;
-            _hasPendingPlayerPlaybackRequest = false;
-
-            double restoreVolume = uxVolumeSlider?.Value ?? 0.5d;
-            uxVideoPlayer.Volume = mute ? 0d : restoreVolume;
-
-            if (startMilliseconds > 0)
+            try
             {
-                uxVideoPlayer.Position = System.TimeSpan.FromMilliseconds(startMilliseconds);
-            }
+                int startMilliseconds = _pendingPlayerStartMilliseconds;
+                bool playImmediately = _pendingPlayerPlayImmediately;
+                bool mute = _pendingPlayerMute;
+                bool focusTimeSlider = _pendingPlayerFocusTimeSlider;
+                _hasPendingPlayerPlaybackRequest = false;
 
-            uxVideoPlayer.Play();
-            UpdateManualPlayerViewport();
-            UpdatePlayerPositionUi(uxVideoPlayer.Position);
+                double restoreVolume = uxVolumeSlider?.Value ?? 0.5d;
+                uxVideoPlayer.Volume = mute ? 0d : restoreVolume;
 
-            if (playImmediately)
-            {
-                IsPlaying = true;
-                TryStartDispatcherTimer(timer, nameof(timer));
-            }
-            else
-            {
-                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
-                uxVideoPlayer.Pause();
-                IsPlaying = false;
-                StopDispatcherTimerSafely(timer, nameof(timer));
-
-                if (!mute)
+                if (startMilliseconds > 0)
                 {
-                    uxVideoPlayer.Volume = restoreVolume;
+                    uxVideoPlayer.Position = System.TimeSpan.FromMilliseconds(startMilliseconds);
+                }
+
+                uxVideoPlayer.Play();
+                UpdateManualPlayerViewport();
+                UpdatePlayerPositionUi(uxVideoPlayer.Position);
+
+                if (playImmediately)
+                {
+                    IsPlaying = true;
+                    TryStartDispatcherTimer(timer, nameof(timer));
+                }
+                else
+                {
+                    await WaitForPlayerDispatcherBackgroundAsync();
+                    uxVideoPlayer.Pause();
+                    IsPlaying = false;
+                    StopDispatcherTimerSafely(timer, nameof(timer));
+
+                    if (!mute)
+                    {
+                        uxVideoPlayer.Volume = restoreVolume;
+                    }
+                }
+
+                if (focusTimeSlider)
+                {
+                    uxTimeSlider.Focus();
                 }
             }
-
-            if (focusTimeSlider)
+            finally
             {
-                uxTimeSlider.Focus();
+                if (shouldReleaseUserPriority)
+                {
+                    ReleasePendingPlayerUserPriorityWork();
+                }
             }
         }
 
         private void ShowPlayerSurface()
         {
-            PlayerArea.Visibility = Visibility.Visible;
-            PlayerController.Visibility = _isWebViewPlayerActive
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-            uxVideoPlayer.Visibility = _isWebViewPlayerActive
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+            SetPlayerVisibilityIfChanged(PlayerArea, Visibility.Visible);
+            SetPlayerVisibilityIfChanged(
+                PlayerController,
+                _isWebViewPlayerActive ? Visibility.Collapsed : Visibility.Visible
+            );
+            SetPlayerVisibilityIfChanged(
+                uxVideoPlayer,
+                _isWebViewPlayerActive ? Visibility.Collapsed : Visibility.Visible
+            );
             if (uxWebVideoPlayer != null)
             {
-                uxWebVideoPlayer.Visibility = _isWebViewPlayerActive
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+                SetPlayerVisibilityIfChanged(
+                    uxWebVideoPlayer,
+                    _isWebViewPlayerActive ? Visibility.Visible : Visibility.Collapsed
+                );
             }
             if (PlayerEmptyState != null)
             {
-                PlayerEmptyState.Visibility = Visibility.Collapsed;
+                SetPlayerVisibilityIfChanged(PlayerEmptyState, Visibility.Collapsed);
             }
         }
 
@@ -460,8 +571,19 @@ namespace IndigoMovieManager
         {
             if (PlayerEmptyState != null)
             {
-                PlayerEmptyState.Visibility = Visibility.Visible;
+                SetPlayerVisibilityIfChanged(PlayerEmptyState, Visibility.Visible);
             }
+        }
+
+        private static void SetPlayerVisibilityIfChanged(UIElement element, Visibility visibility)
+        {
+            if (element == null || element.Visibility == visibility)
+            {
+                return;
+            }
+
+            // 同じ表示状態の再代入を避け、Player 操作後の余計なレイアウト更新を増やさない。
+            element.Visibility = visibility;
         }
 
         // WebView2 は別 HWND として前面に出るため、左ドロワー操作中だけ描画面を退避する。
@@ -483,7 +605,11 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (TabPlayer?.IsSelected == true && !_isDetachedPlayerFullscreenActive)
+            if (
+                TabPlayer?.IsSelected == true
+                && !_isDetachedPlayerFullscreenActive
+                && uxWebVideoPlayer.Visibility != Visibility.Visible
+            )
             {
                 uxWebVideoPlayer.Visibility = Visibility.Visible;
                 DebugRuntimeLog.Write("ui-tempo", "player webview restored after left drawer");
@@ -650,12 +776,26 @@ namespace IndigoMovieManager
             _suppressPlayerThumbnailSelectionChanged = true;
             try
             {
+                bool activeListSelectionChanged = false;
+                ListView activeList = GetUpperTabPlayerList();
                 foreach (ListView list in GetAllUpperTabPlayerLists())
                 {
+                    if (ReferenceEquals(list.SelectedItem, selectedMovie))
+                    {
+                        continue;
+                    }
+
                     list.SelectedItem = selectedMovie;
+                    if (ReferenceEquals(list, activeList))
+                    {
+                        activeListSelectionChanged = true;
+                    }
                 }
 
-                GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);
+                if (activeListSelectionChanged)
+                {
+                    GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);
+                }
             }
             finally
             {
@@ -685,7 +825,10 @@ namespace IndigoMovieManager
                         continue;
                     }
 
-                    list.SelectedItem = selectedMovie;
+                    if (!ReferenceEquals(list.SelectedItem, selectedMovie))
+                    {
+                        list.SelectedItem = selectedMovie;
+                    }
                 }
             }
             finally
@@ -714,63 +857,94 @@ namespace IndigoMovieManager
 
         private async Task ApplyPendingWebViewPlaybackRequestAsync()
         {
+            bool shouldReleaseUserPriority =
+                _hasPendingWebViewPlaybackRequest || _isPlayerUserPriorityReleasePending;
             if (
                 !_hasPendingWebViewPlaybackRequest
                 || !_isWebViewPlayerActive
                 || uxWebVideoPlayer?.CoreWebView2 == null
             )
             {
+                if (shouldReleaseUserPriority)
+                {
+                    ReleasePendingPlayerUserPriorityWork();
+                }
                 return;
             }
 
-            int startMilliseconds = _pendingWebViewStartMilliseconds;
-            bool playImmediately = _pendingWebViewPlayImmediately;
-            bool mute = _pendingWebViewMute;
-            _hasPendingWebViewPlaybackRequest = false;
+            try
+            {
+                int startMilliseconds = _pendingWebViewStartMilliseconds;
+                bool playImmediately = _pendingWebViewPlayImmediately;
+                bool mute = _pendingWebViewMute;
+                _hasPendingWebViewPlaybackRequest = false;
 
-            string seconds = (startMilliseconds / 1000d).ToString(
-                System.Globalization.CultureInfo.InvariantCulture
-            );
-            string volume = uxVolumeSlider.Value.ToString(
-                System.Globalization.CultureInfo.InvariantCulture
-            );
-            string script = $$"""
-                (() => {
-                  const player = document.querySelector('video');
-                  if (!player) {
-                    return;
-                  }
+                string seconds = (startMilliseconds / 1000d).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
+                string volume = uxVolumeSlider.Value.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
+                string script = $$"""
+                    (() => {
+                      const player = document.querySelector('video');
+                      if (!player) {
+                        return;
+                      }
 
-                  const applyPlayback = () => {
-                    try {
-                      player.currentTime = {{seconds}};
-                    } catch {}
+                      const applyPlayback = () => {
+                        try {
+                          player.currentTime = {{seconds}};
+                        } catch {}
 
-                    player.muted = {{(mute ? "true" : "false")}};
-                    player.volume = {{volume}};
-                    player.dataset.indigoPlayerHostVolumeApplied = '1';
+                        player.dataset.indigoPlayerHostVolumeApplying = '1';
+                        player.muted = {{(mute ? "true" : "false")}};
+                        player.volume = {{volume}};
+                        player.dataset.indigoPlayerHostVolumeApplied = '1';
+                        setTimeout(() => {
+                          delete player.dataset.indigoPlayerHostVolumeApplying;
+                        }, 0);
 
-                    const playPromise = player.play();
-                    if (playPromise) {
-                      playPromise.catch(() => {});
-                    }
+                        const playPromise = player.play();
+                        if (playPromise) {
+                          playPromise.catch(() => {});
+                        }
 
-                    if (!{{(playImmediately ? "true" : "false")}}) {
-                      Promise.resolve(playPromise).finally(() => player.pause());
-                    }
-                  };
+                        if (!{{(playImmediately ? "true" : "false")}}) {
+                          Promise.resolve(playPromise).finally(() => player.pause());
+                        }
+                      };
 
-                  if (player.readyState >= 1) {
-                    applyPlayback();
-                    return;
-                  }
+                      if (player.readyState >= 1) {
+                        applyPlayback();
+                        return;
+                      }
 
-                  player.addEventListener('loadedmetadata', applyPlayback, { once: true });
-                })();
-                """;
-            await uxWebVideoPlayer.ExecuteScriptAsync(script);
-            IsPlaying = playImmediately;
-            UpdatePlayerPositionUi(System.TimeSpan.FromMilliseconds(startMilliseconds));
+                      player.addEventListener('loadedmetadata', applyPlayback, { once: true });
+                    })();
+                    """;
+                await uxWebVideoPlayer.ExecuteScriptAsync(script);
+                IsPlaying = playImmediately;
+                UpdatePlayerPositionUi(System.TimeSpan.FromMilliseconds(startMilliseconds));
+            }
+            finally
+            {
+                if (shouldReleaseUserPriority)
+                {
+                    ReleasePendingPlayerUserPriorityWork();
+                }
+            }
+        }
+
+        private void UxWebVideoPlayer_NavigationStarting(
+            object sender,
+            CoreWebView2NavigationStartingEventArgs e
+        )
+        {
+            if (_isWebViewPlayerActive)
+            {
+                _pendingWebViewNavigationId = e.NavigationId;
+            }
         }
 
         private async void UxWebVideoPlayer_NavigationCompleted(
@@ -778,8 +952,21 @@ namespace IndigoMovieManager
             CoreWebView2NavigationCompletedEventArgs e
         )
         {
-            if (!e.IsSuccess || !_isWebViewPlayerActive)
+            if (!_isWebViewPlayerActive)
             {
+                return;
+            }
+
+            if (e.NavigationId != _pendingWebViewNavigationId)
+            {
+                return;
+            }
+
+            if (!e.IsSuccess)
+            {
+                _hasPendingWebViewPlaybackRequest = false;
+                IsPlaying = false;
+                ReleasePendingPlayerUserPriorityWork();
                 return;
             }
 
@@ -874,7 +1061,7 @@ namespace IndigoMovieManager
                     })();
                     """
                 );
-                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                await WaitForPlayerDispatcherBackgroundAsync();
                 await OpenMainWindowPlayerFullscreenAsync();
             }
             catch (Exception ex)
@@ -1072,6 +1259,10 @@ namespace IndigoMovieManager
                     player.controls = true;
 
                     const notifyVolume = () => {
+                      if (player.dataset.indigoPlayerHostVolumeApplying === '1') {
+                        return;
+                      }
+
                       if (player.dataset.indigoPlayerHostVolumeApplied !== '1') {
                         return;
                       }
@@ -1140,6 +1331,9 @@ namespace IndigoMovieManager
             _hasPendingWebViewPlaybackRequest = false;
             _isWebViewPlayerActive = false;
             _currentWebViewPlayerPath = "";
+            _pendingWebViewNavigationId = 0;
+            // WebView停止・切替では NavigationCompleted が後着するため、ここでユーザー優先区間を畳む。
+            ReleasePendingPlayerUserPriorityWork();
 
             if (uxWebVideoPlayer == null)
             {

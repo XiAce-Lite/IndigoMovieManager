@@ -34,11 +34,13 @@ namespace IndigoMovieManager
             return Math.Max(0d, Math.Min(1d, volume));
         }
 
-        // 保存値が初期化落ちして 0 へ戻った時は、起動時だけ既定の 50% へ戻す。
+        // 保存値が初期化落ちして 0%/100% へ戻った時は、起動時だけ既定の 50% へ戻す。
         private static double ResolveSavedPlayerVolumeSetting(double volume)
         {
             double resolvedVolume = ClampPlayerVolumeSetting(volume);
-            return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;
+            return resolvedVolume <= 0d || resolvedVolume >= 1d
+                ? DefaultPlayerVolume
+                : resolvedVolume;
         }
 
         // 画面表示と保存値を同じ音量へ寄せ、次に開く動画にもそのまま引き継ぐ。
@@ -53,8 +55,12 @@ namespace IndigoMovieManager
                 uxVolume.Text = ((int)(resolvedVolume * 100)).ToString();
             }
 
-            Properties.Settings.Default.PlayerVolume = resolvedVolume;
-            QueuePlayerVolumeSettingSave();
+            // WebView から同じ音量通知が返ってきた時は、保存キューだけ積み直さない。
+            if (Math.Abs(Properties.Settings.Default.PlayerVolume - resolvedVolume) > 0.0001d)
+            {
+                Properties.Settings.Default.PlayerVolume = resolvedVolume;
+                QueuePlayerVolumeSettingSave();
+            }
 
             if (!pushToWebView || uxWebVideoPlayer?.CoreWebView2 == null)
             {
@@ -62,7 +68,7 @@ namespace IndigoMovieManager
             }
 
             _ = uxWebVideoPlayer.ExecuteScriptAsync(
-                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; }}"
+                $"const player = document.querySelector('video'); if (player) {{ player.dataset.indigoPlayerHostVolumeApplying = '1'; player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; setTimeout(() => {{ delete player.dataset.indigoPlayerHostVolumeApplying; }}, 0); }}"
             );
         }
 
@@ -101,6 +107,15 @@ namespace IndigoMovieManager
         private void SyncPlayerVolumeFromWebView(double volume)
         {
             double resolvedVolume = ClampPlayerVolumeSetting(volume);
+            double currentVolume = ClampPlayerVolumeSetting(uxVolumeSlider?.Value ?? DefaultPlayerVolume);
+            if (resolvedVolume >= 1d && currentVolume < 0.999d)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"player webview default volume ignored: incoming={resolvedVolume:0.###} current={currentVolume:0.###}"
+                );
+                return;
+            }
 
             _isPlayerVolumeSyncingFromWebView = true;
             try
@@ -375,6 +390,27 @@ namespace IndigoMovieManager
             _ = ApplyPendingPlayerPlaybackRequestAsync();
         }
 
+        private void UxVideoPlayer_MediaFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            // ロード失敗時も user-priority を解放し、背後監視を永久停止させない。
+            IsPlaying = false;
+            _hasPendingPlayerPlaybackRequest = false;
+            ReleasePendingPlayerUserPriorityWork();
+            StopDispatcherTimerSafely(timer, nameof(timer));
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"player media load failed: {e?.ErrorException?.Message ?? "unknown"}"
+            );
+        }
+
+        private void UxVideoPlayer_MediaEnded(object sender, RoutedEventArgs e)
+        {
+            // 再生終了後は poll の再生中扱いを解除し、通常の監視間隔へ戻す。
+            IsPlaying = false;
+            StopDispatcherTimerSafely(timer, nameof(timer));
+            UpdatePlayerPositionUi(uxVideoPlayer.Position);
+        }
+
         internal static double ResolveMediaDurationMaximumMilliseconds(
             Duration naturalDuration,
             double fallbackMaximum
@@ -448,8 +484,7 @@ namespace IndigoMovieManager
                 if (uxWebVideoPlayer != null)
                 {
                     // 全画面中は専用Window側で全面ストレッチさせ、MainWindow側サイズは持ち込まない。
-                    uxWebVideoPlayer.Width = double.NaN;
-                    uxWebVideoPlayer.Height = double.NaN;
+                    SetPlayerElementSizeIfChanged(uxWebVideoPlayer, double.NaN, double.NaN);
                 }
 
                 return;
@@ -482,11 +517,13 @@ namespace IndigoMovieManager
             if (_isWebViewPlayerActive)
             {
                 // WebView2 はプレイヤー枠いっぱいに広げ、内側余白だけを残して使い切る。
-                uxWebVideoPlayer.Width = availableWidth;
-                uxWebVideoPlayer.Height = availableHeight;
-                PlayerArea.Width = availableWidth;
-                PlayerArea.Height = availableHeight + controllerHeight;
-                PlayerController.Width = availableWidth;
+                SetPlayerElementSizeIfChanged(uxWebVideoPlayer, availableWidth, availableHeight);
+                SetPlayerElementSizeIfChanged(
+                    PlayerArea,
+                    availableWidth,
+                    availableHeight + controllerHeight
+                );
+                SetPlayerElementWidthIfChanged(PlayerController, availableWidth);
                 return;
             }
 
@@ -503,16 +540,67 @@ namespace IndigoMovieManager
             }
 
             // 動画面と操作バーの横幅を揃え、縦動画でも画面内へ収める。
-            uxVideoPlayer.Width = viewportSize.Width;
-            uxVideoPlayer.Height = viewportSize.Height;
+            SetPlayerElementSizeIfChanged(uxVideoPlayer, viewportSize.Width, viewportSize.Height);
             if (uxWebVideoPlayer != null)
             {
-                uxWebVideoPlayer.Width = viewportSize.Width;
-                uxWebVideoPlayer.Height = viewportSize.Height;
+                SetPlayerElementSizeIfChanged(
+                    uxWebVideoPlayer,
+                    viewportSize.Width,
+                    viewportSize.Height
+                );
             }
-            PlayerArea.Width = viewportSize.Width;
-            PlayerArea.Height = viewportSize.Height + controllerHeight;
-            PlayerController.Width = viewportSize.Width;
+            SetPlayerElementSizeIfChanged(
+                PlayerArea,
+                viewportSize.Width,
+                viewportSize.Height + controllerHeight
+            );
+            SetPlayerElementWidthIfChanged(PlayerController, viewportSize.Width);
+        }
+
+        private static void SetPlayerElementSizeIfChanged(
+            FrameworkElement element,
+            double width,
+            double height
+        )
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            SetPlayerElementWidthIfChanged(element, width);
+            SetPlayerElementHeightIfChanged(element, height);
+        }
+
+        private static void SetPlayerElementWidthIfChanged(FrameworkElement element, double width)
+        {
+            if (element == null || ArePlayerLayoutLengthsEqual(element.Width, width))
+            {
+                return;
+            }
+
+            // 同じサイズの再設定を避け、Player user-priority 後の余計な measure を抑える。
+            element.Width = width;
+        }
+
+        private static void SetPlayerElementHeightIfChanged(FrameworkElement element, double height)
+        {
+            if (element == null || ArePlayerLayoutLengthsEqual(element.Height, height))
+            {
+                return;
+            }
+
+            element.Height = height;
+        }
+
+        private static bool ArePlayerLayoutLengthsEqual(double current, double next)
+        {
+            if (double.IsNaN(current) && double.IsNaN(next))
+            {
+                return true;
+            }
+
+            return Math.Abs(current - next) < 0.0001d;
         }
 
         private void EnsureManualPlayerResizeTrackingHooked()

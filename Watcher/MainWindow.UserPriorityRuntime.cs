@@ -47,11 +47,7 @@ namespace IndigoMovieManager
                 }
 
                 isStillActive = _userPriorityWorkCount > 0;
-                hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
-                if (!isStillActive && hasDeferredWatchWork)
-                {
-                    _watchWorkDeferredWhileSuppressed = false;
-                }
+                hasDeferredWatchWork = !isStillActive && ConsumeWatchWorkDeferredForUserPriorityCatchUp();
             }
 
             if (!wasActive)
@@ -84,6 +80,59 @@ namespace IndigoMovieManager
             lock (_userPriorityWorkSync)
             {
                 return _userPriorityWorkCount > 0;
+            }
+        }
+
+        // user-priority の解除と defer 記録を同じロック順に寄せ、解除境界の catch-up 取りこぼしを防ぐ。
+        private bool TryMarkWatchWorkDeferredForUserPriorityCatchUp(string trigger)
+        {
+            if (_userPriorityWorkSync == null || _watchUiSuppressionSync == null)
+            {
+                return false;
+            }
+
+            bool shouldLog = false;
+            lock (_userPriorityWorkSync)
+            {
+                if (_userPriorityWorkCount <= 0)
+                {
+                    return false;
+                }
+
+                lock (_watchUiSuppressionSync)
+                {
+                    shouldLog = !_watchWorkDeferredWhileSuppressed;
+                    _watchWorkDeferredWhileSuppressed = true;
+                }
+            }
+
+            if (shouldLog)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"watch work deferred for background catch-up: trigger={trigger}"
+                );
+            }
+
+            return true;
+        }
+
+        private bool ConsumeWatchWorkDeferredForUserPriorityCatchUp()
+        {
+            if (_watchUiSuppressionSync == null)
+            {
+                return false;
+            }
+
+            lock (_watchUiSuppressionSync)
+            {
+                bool hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
+                if (hasDeferredWatchWork)
+                {
+                    _watchWorkDeferredWhileSuppressed = false;
+                }
+
+                return hasDeferredWatchWork;
             }
         }
 

@@ -203,12 +203,18 @@ public partial class MainWindow
 
         if (shouldDeferFullReconcileByUserPriority)
         {
-            MarkWatchWorkDeferredForBackgroundCatchUp($"watch-zero-diff-reconcile:{checkFolder}");
-            DebugRuntimeLog.Write(
-                "watch-check",
-                $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"
-            );
-            return false;
+            if (
+                TryMarkWatchWorkDeferredForUserPriorityCatchUp(
+                    $"watch-zero-diff-reconcile:{checkFolder}"
+                )
+            )
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"
+                );
+                return false;
+            }
         }
 
         string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(

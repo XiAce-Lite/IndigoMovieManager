@@ -1263,6 +1263,88 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(canReuseCurrentOrder, Is.False);
     }
 
+    [TestCase("no-changed-movies")]
+    [TestCase("filter-unavailable")]
+    public void TryBuildChangedMovieRefreshSourceWithReason_局所更新できない理由を返す(
+        string expectedReason
+    )
+    {
+        MovieRecords first = new()
+        {
+            Movie_Path = @"E:\Movies\first.mp4",
+            Movie_Name = "first.mp4",
+        };
+        IEnumerable<MainWindow.WatchChangedMovie> changedMovies =
+            expectedReason == "no-changed-movies"
+                ? []
+                : [
+                    new MainWindow.WatchChangedMovie(
+                        first.Movie_Path,
+                        MainWindow.WatchMovieChangeKind.DisplayedViewRefresh,
+                        MainWindow.WatchMovieDirtyFields.MovieName
+                    ),
+                ];
+        Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filter =
+            expectedReason == "filter-unavailable"
+                ? null
+                : IndigoMovieManager.Infrastructure.SearchService.FilterMovies;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSourceWithReason(
+            [first],
+            [first],
+            "",
+            "12",
+            changedMovies,
+            filter,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder,
+            out string fallbackReason
+        );
+
+        Assert.That(result, Is.False);
+        Assert.That(nextFilteredMovies, Is.Empty);
+        Assert.That(canReuseCurrentOrder, Is.False);
+        Assert.That(fallbackReason, Is.EqualTo(expectedReason));
+    }
+
+    [Test]
+    public void TryBuildChangedMovieRefreshSourceWithReason_dup検索でhash変更ありなら理由を返す()
+    {
+        MovieRecords first = new()
+        {
+            Movie_Path = @"E:\Movies\first.mp4",
+            Movie_Name = "first.mp4",
+            Hash = "same",
+        };
+        MovieRecords second = new()
+        {
+            Movie_Path = @"E:\Movies\second.mp4",
+            Movie_Name = "second.mp4",
+            Hash = "same",
+        };
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSourceWithReason(
+            [first, second],
+            [second],
+            "{dup}",
+            "12",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\second.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.Hash
+                ),
+            ],
+            IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
+            out _,
+            out _,
+            out string fallbackReason
+        );
+
+        Assert.That(result, Is.False);
+        Assert.That(fallbackReason, Is.EqualTo("dup-hash-dirty"));
+    }
+
     [Test]
     public void DoesSearchDependOnDirtyFields_検索列に無関係ならFalseを返す()
     {

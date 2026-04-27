@@ -731,6 +731,8 @@
                               x:Name="uxVideoPlayer"
                               Grid.Row="0"
                               LoadedBehavior="Manual"
+                              MediaEnded="UxVideoPlayer_MediaEnded"
+                              MediaFailed="UxVideoPlayer_MediaFailed"
                               MediaOpened="UxVideoPlayer_MediaOpened"
                               PreviewMouseDown="UxVideoPlayer_PreviewMouseDown"
                               ScrubbingEnabled="true"
@@ -744,6 +746,7 @@
                               Grid.Row="0"
                               HorizontalAlignment="Stretch"
                               NavigationCompleted="UxWebVideoPlayer_NavigationCompleted"
+                              NavigationStarting="UxWebVideoPlayer_NavigationStarting"
                               VerticalAlignment="Stretch"
                               Visibility="Collapsed"
                             />

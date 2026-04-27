@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using System.Windows.Threading;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager
@@ -220,13 +221,7 @@ namespace IndigoMovieManager
                     );
                 }
 
-                if (Dispatcher.CheckAccess())
-                {
-                    showPopup();
-                    return;
-                }
-
-                Dispatcher.Invoke(showPopup);
+                PostThumbnailUserActionUiNotification(showPopup);
                 return;
             }
 
@@ -244,13 +239,24 @@ namespace IndigoMovieManager
                 );
             }
 
-            if (Dispatcher.CheckAccess())
+            PostThumbnailUserActionUiNotification(showOverlay);
+        }
+
+        // 結果通知は待機不要なので、背景側をUIスレッド完了待ちで止めない。
+        private void PostThumbnailUserActionUiNotification(Action action)
+        {
+            if (action == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
             {
-                showOverlay();
                 return;
             }
 
-            Dispatcher.Invoke(showOverlay);
+            if (Dispatcher.CheckAccess())
+            {
+                action();
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(action, DispatcherPriority.Background);
         }
 
         // OK だけの結果通知は modal にせず、長め表示の overlay msg へ寄せる。

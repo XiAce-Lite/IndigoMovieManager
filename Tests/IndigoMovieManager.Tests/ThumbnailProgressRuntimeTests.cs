@@ -199,6 +199,34 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void ApplyInitialTotalCreatedCount_セッション進捗を保ったまま総作成数だけ後追い反映する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        runtime.UpdateSessionProgress(completedCount: 2, totalCount: 8, currentParallel: 1, configuredParallel: 4);
+
+        runtime.ApplyInitialTotalCreatedCount(123);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        Assert.That(snapshot.TotalCreatedCount, Is.EqualTo(123));
+        Assert.That(snapshot.SessionCompletedCount, Is.EqualTo(2));
+        Assert.That(snapshot.SessionTotalCount, Is.EqualTo(8));
+        Assert.That(snapshot.CurrentParallelism, Is.EqualTo(1));
+        Assert.That(snapshot.ConfiguredParallelism, Is.EqualTo(4));
+    }
+
+    [Test]
+    public void ApplyInitialTotalCreatedCount_背景走査中の作成済み加算を保持する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        runtime.RecordThumbnailCreated(2);
+
+        runtime.ApplyInitialTotalCreatedCount(123);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        Assert.That(snapshot.TotalCreatedCount, Is.EqualTo(125));
+    }
+
+    [Test]
     public void CreateSnapshot_無変更時は同一インスタンスを再利用する()
     {
         ThumbnailProgressRuntime runtime = new();

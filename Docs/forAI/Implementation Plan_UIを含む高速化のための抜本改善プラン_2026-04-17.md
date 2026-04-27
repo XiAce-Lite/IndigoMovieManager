@@ -1,8 +1,13 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-24
+最終更新日: 2026-04-27
 
 変更概要:
+- watch query-only 局所更新が full reload へ戻る理由を `changed_path_fallback` で残し、局所更新が効かない条件を観測して次の縮小対象を選べるようにした
+- watch キュー圧縮の trigger / path 因果ログを追加し、圧縮で見えにくくなる発火理由を `debug-runtime.log` で追えるようにした
+- WebView Player 停止・切替時に `user-priority` 解放待ちを残さないよう、WebView surface リセットで pending 解放を畳む方針を反映した
+- サムネ進捗の初期 snapshot 全走査を背景化し、下部 `ThumbnailProgress` 初期化が first-page と入力を押しのけないようにした
+- 検索確定後の履歴保存・履歴再読込を背景化し、検索完了直後に残っていた同期 DB I/O を UI 導線から外した
 - 全体計画の再構築に合わせ、実行レーンを `UIスレッド簡素化`、`diff-first UI`、`watcher/poll 境界安定化`、`起動 warm path`、`visible-first / Player`、`skin 別レーン` の順へ整理した
 - `Watcher.cs` の薄化は独立目標から外し、UI thread / queue / shutdown の詰まりを減らす時だけ進める方針へ変更した
 - `fire-and-forget` の増加ではなく、bounded drain とログを持つ queue / persister / scheduler へ寄せることを固定した
@@ -43,6 +48,7 @@
 - さらに `manual-reload` 開始時に watch scan scope を進め、走行中の `Auto / Watch` scan を stale 扱いで早めに畳むようにした
 - さらにプレーヤータブ右側一覧の画像バインドは、active tab 判定だけでなく viewport の可視・近傍キーにも通し、再読込直後の off-screen `image cache hit` 雪崩を減らす方向へ寄せた
 - 下部 `ThumbnailProgress` タブが非表示の時は snapshot refresh を即時 UI 更新せず dirty 記録だけへ寄せ、サムネ成功直後の hidden progress 更新が `activity=None` を増やす経路を細くし始めた
+- 下部 `ThumbnailProgress` の初期 snapshot 全走査は UI 初期表示から外し、背景作成後に UI へ反映する形へ寄せた
 - `SearchSidecar` は本線リポから一旦外し、別リポで継続検証する方針へ切り替えた
 - 本線の検索 hot path は、sidecar を使わず既存 `SearchService` 正本のまま `MovieRecords` 単位 cache で軽量化する方針へ寄せた
 - 検索窓のインクリメント検索は、常時即時実行ではなく `0.5s debounce` で通常時だけ戻し、起動時部分ロード・IME変換中・途中構文では Enter 確定へ寄せる
@@ -52,6 +58,7 @@
 - さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
 - 実機確認では `ggggg` のような ASCII 検索で `filter-movies` が完了しない事象を再現し、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索 hot path の主因は、比較順より `kana / katakana` 派生列の全件生成だったと整理する
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
+- さらに検索確定後の履歴保存・履歴再読込は background task へ逃がし、DB が同じ時だけ UI へ履歴候補を反映する形へ寄せた
 - `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で解く方針を固定した。無通信 timer は shutdown 専用 safety fuse としてのみ扱う
 - `Watcher.cs` は入口と中盤の `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口判定を helper / policy 側へ寄せ続け、`CheckFolderAsync(...)` を orchestration 専念へさらに寄せた
 - `Everything poll` は watch folder snapshot、eligible 判定再利用、重複 path 除去、low-update 時の間隔延長まで入り、通常周回の CPU / wakeup コストを下げ始めた
@@ -62,6 +69,7 @@
 - `WatcherEventQueue` は処理 task を 1 本共有し、enqueue ごとに queue runner を増やさない形へ寄せて watch burst 時の先頭詰まり増幅を抑えた
 - `Created` の ready 待機は queue runner から分離して直列専用パイプラインへ逃がし、`Renamed` を `Created` 待ちで止めない形へ整合を補強した
 - 旧パス未登録の `Renamed` は watch scan へ再合流させ、`Created -> Renamed` 連鎖で rename だけ先行した場合でも最終整合を回収する形へ寄せた
+- watch query-only full 戻り理由ログ、watch キュー圧縮の因果ログ、WebView 停止時の `user-priority` pending 解放、サムネ進捗初期全走査の背景化は完了済みとして扱う
 
 ## 1. 目的
 
@@ -227,7 +235,7 @@
 - `FileSystemWatcher` 入力停止、watch event queue complete、created ready pipeline drain、Everything poll 停止を順序付きで扱う。
 - low-update 時の poll interval 延長を、初期処理が落ち着いた後だけ有効化する。
 - `watch folder snapshot` と eligible 判定 cache の invalidation 条件を、DB 切替 / watch folder 編集 / settings 変更へ限定する。
-- queue の mode 圧縮で trigger / path の因果が消えすぎる箇所は、ログか軽量 DTO で追えるようにする。
+- queue の mode 圧縮で trigger / path の因果が消えすぎる箇所は、追加済みログを維持し、必要なら軽量 DTO へ広げる。
 
 完了条件:
 - shutdown 中に watcher / poll / created pipeline が新規要求を増やさない。
@@ -346,7 +354,7 @@
 ### Step 3
 
 - `FilterAndSortAsync(...)` の呼び出し元を、`full snapshot reload`、`query only recompute`、`item diff apply` の 3 群へ再分類する。
-- `changed paths + ChangeKind + DirtyFields + ObservedState` がある経路では、full reload へ戻る理由を必ず明示する。
+- `changed paths + ChangeKind + DirtyFields + ObservedState` がある経路では、追加済みの full reload 戻り理由ログを使い、残った fallback 条件を実機ログから選んで縮める。
 
 ### Step 4
 

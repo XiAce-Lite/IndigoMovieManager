@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
@@ -1203,16 +1204,32 @@ namespace IndigoMovieManager
             {
                 try
                 {
+                    bool isDeferredByUiSuppression = false;
+                    bool isDeferredByUserPriority = false;
                     if (IsWatchSuppressedByUi())
                     {
                         MarkWatchWorkDeferredWhileSuppressed("everything-poll");
+                        isDeferredByUiSuppression = true;
+                    }
+                    else if (TryDeferEverythingWatchPollForUserPriority())
+                    {
+                        // 明示操作が終わった後の catch-up へ任せ、この周回では入口判定まで進めない。
+                        isDeferredByUserPriority = true;
                     }
                     else if (ShouldRunEverythingWatchPollPolicy())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
 
-                    int delayMs = ResolveEverythingWatchPollDelayMs();
+                    int delayMs = ResolveEverythingWatchPollDelayMs(
+                        shouldProbeQueueLoad: ShouldProbeEverythingWatchPollQueueLoad(
+                            isDeferredByUiSuppression,
+                            isDeferredByUserPriority
+                        ),
+                        isDeferredByUiSuppression: isDeferredByUiSuppression,
+                        isDeferredByUserPriority: isDeferredByUserPriority,
+                        isPlayerPlaybackActive: IsPlaying
+                    );
                     await Task.Delay(delayMs, cts);
                 }
                 catch (OperationCanceledException)
@@ -1241,15 +1258,30 @@ namespace IndigoMovieManager
         /// サムネイルキュー負荷に応じてEverythingポーリング間隔を動的に調整する。
         /// キュー残量が多い時はポーリングを15秒に延ばし、CPUの空振り消費を抑える。
         /// </summary>
-        private int ResolveEverythingWatchPollDelayMs()
+        private int ResolveEverythingWatchPollDelayMs(
+            bool shouldProbeQueueLoad = true,
+            bool isDeferredByUiSuppression = false,
+            bool isDeferredByUserPriority = false,
+            bool isPlayerPlaybackActive = false
+        )
         {
             int delayMs = EverythingWatchPollIntervalMs;
             try
             {
-                var queueDbService = ResolveCurrentQueueDbService();
-                int activeCount = queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId)
-                    ?? 0;
+                int activeCount = 0;
+                if (shouldProbeQueueLoad)
+                {
+                    var queueDbService = ResolveCurrentQueueDbService();
+                    activeCount =
+                        queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId) ?? 0;
+                }
                 delayMs = ResolveEverythingWatchPollDelayFromState(activeCount);
+                delayMs = ApplyEverythingWatchPollInteractionDelayPolicy(
+                    delayMs,
+                    isDeferredByUiSuppression,
+                    isDeferredByUserPriority,
+                    isPlayerPlaybackActive
+                );
             }
             catch (Exception ex)
             {
@@ -1669,14 +1701,21 @@ namespace IndigoMovieManager
         {
             // 現在のテキストを一時保存
             string currentText = SearchBox?.Text ?? "";
+            ApplySearchHistoryRecords(
+                SearchHistoryService.LoadLatestHistory(dbFullPath),
+                currentText
+            );
+        }
 
+        private void ApplySearchHistoryRecords(IEnumerable<History> historyRecords, string currentText)
+        {
             bool previousSuppressState = _suppressSearchBoxTextChangedHandling;
             _suppressSearchBoxTextChangedHandling = true;
             try
             {
                 historyData = null;
                 MainVM.HistoryRecs.Clear();
-                foreach (History item in SearchHistoryService.LoadLatestHistory(dbFullPath))
+                foreach (History item in historyRecords ?? [])
                 {
                     MainVM.HistoryRecs.Add(item);
                 }
@@ -1848,10 +1887,15 @@ namespace IndigoMovieManager
                 startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
                 isGetNew: isGetNew
             );
+            string fullReloadReason = MainWindow.ResolveFilterSortFullReloadReason(
+                hasSnapshotData: latestMovieData != null,
+                startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
+                isGetNew: isGetNew
+            );
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter start: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
+                $"filter start: revision={requestRevision} sort={id} route={executionRoute} full_reload_reason={fullReloadReason} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
             );
 
             if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
@@ -2033,7 +2077,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} route={executionRoute} full_reload_reason={fullReloadReason} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -2066,6 +2110,7 @@ namespace IndigoMovieManager
             int searchCount = 0;
             bool usedChangedPathRefresh = false;
             bool canReuseCurrentOrder = false;
+            string changedPathFallbackReason = "none";
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
@@ -2075,7 +2120,7 @@ namespace IndigoMovieManager
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             await Task.Run(() =>
             {
-                usedChangedPathRefresh = TryBuildChangedMovieRefreshSource(
+                usedChangedPathRefresh = TryBuildChangedMovieRefreshSourceWithReason(
                     sourceMovies,
                     currentFilteredMovies,
                     searchKeyword,
@@ -2083,7 +2128,8 @@ namespace IndigoMovieManager
                     changedMovies,
                     MainVM.FilterMovies,
                     out filtered,
-                    out canReuseCurrentOrder
+                    out canReuseCurrentOrder,
+                    out changedPathFallbackReason
                 );
                 if (!usedChangedPathRefresh)
                 {
@@ -2148,7 +2194,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} changed_path_fallback={changedPathFallbackReason} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -2232,11 +2278,44 @@ namespace IndigoMovieManager
             out bool canReuseCurrentOrder
         )
         {
+            return TryBuildChangedMovieRefreshSourceWithReason(
+                sourceMovies,
+                currentFilteredMovies,
+                searchKeyword,
+                sortId,
+                changedMovies,
+                filterMovies,
+                out nextFilteredMovies,
+                out canReuseCurrentOrder,
+                out _
+            );
+        }
+
+        internal static bool TryBuildChangedMovieRefreshSourceWithReason(
+            IEnumerable<MovieRecords> sourceMovies,
+            IEnumerable<MovieRecords> currentFilteredMovies,
+            string searchKeyword,
+            string sortId,
+            IEnumerable<WatchChangedMovie> changedMovies,
+            Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder,
+            out string fallbackReason
+        )
+        {
             nextFilteredMovies = [];
             canReuseCurrentOrder = false;
+            fallbackReason = "none";
             List<WatchChangedMovie> normalizedChangedMovies = MainWindow.MergeChangedMovies([], changedMovies);
-            if (normalizedChangedMovies.Count < 1 || filterMovies == null)
+            if (normalizedChangedMovies.Count < 1)
             {
+                fallbackReason = "no-changed-movies";
+                return false;
+            }
+
+            if (filterMovies == null)
+            {
+                fallbackReason = "filter-unavailable";
                 return false;
             }
 
@@ -2252,6 +2331,7 @@ namespace IndigoMovieManager
                 )
             )
             {
+                fallbackReason = "dup-hash-dirty";
                 return false;
             }
 
@@ -2432,6 +2512,26 @@ namespace IndigoMovieManager
             return ((!hasSnapshotData && !startupFeedLoadedAllPages) || isGetNew)
                 ? "full-reload"
                 : "query-only";
+        }
+
+        // full reload へ戻る理由を短い札にし、次の差分化候補をログから拾えるようにする。
+        internal static string ResolveFilterSortFullReloadReason(
+            bool hasSnapshotData,
+            bool startupFeedLoadedAllPages,
+            bool isGetNew
+        )
+        {
+            if (isGetNew)
+            {
+                return "is-get-new";
+            }
+
+            if (!hasSnapshotData && !startupFeedLoadedAllPages)
+            {
+                return "no-snapshot-startup-partial";
+            }
+
+            return "none";
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

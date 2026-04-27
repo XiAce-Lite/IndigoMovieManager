@@ -26,9 +26,11 @@ namespace IndigoMovieManager
                     IsUserPriorityWorkActive(),
                     mode == CheckMode.Manual
                 )
+                && TryMarkWatchWorkDeferredForUserPriorityCatchUp(
+                    $"check-start-user-priority:{mode}"
+                )
             )
             {
-                MarkWatchWorkDeferredForBackgroundCatchUp($"check-start-user-priority:{mode}");
                 return true;
             }
 
@@ -152,6 +154,7 @@ namespace IndigoMovieManager
             bool wasSuppressed;
             bool isStillSuppressed;
             bool hasDeferredWatchWork;
+            bool shouldQueueCatchUp;
             bool shouldSkipCatchUp;
             lock (_watchUiSuppressionSync)
             {
@@ -172,13 +175,12 @@ namespace IndigoMovieManager
                 isStillSuppressed = _watchUiSuppressionCount > 0;
                 hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
                 shouldSkipCatchUp = ShouldSkipWatchCatchUpAfterUiSuppression(reason);
-                if (
-                    wasSuppressed
+                shouldQueueCatchUp = wasSuppressed
                     && ShouldQueueWatchCatchUpAfterUiSuppression(
                         isStillSuppressed,
                         hasDeferredWatchWork
-                    )
-                )
+                    );
+                if (shouldQueueCatchUp && !shouldSkipCatchUp)
                 {
                     _watchWorkDeferredWhileSuppressed = false;
                 }
@@ -194,11 +196,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("watch-check", $"watch ui suppression end: reason={reason}");
             }
 
-            if (
-                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
-                && shouldSkipCatchUp
-            )
+            if (shouldQueueCatchUp && shouldSkipCatchUp)
             {
+                // manual-reload 解除時に user-priority が残っている場合は、
+                // defer を user-priority 側の resume へ引き渡して取りこぼしを防ぐ。
+                if (!IsUserPriorityWorkActive())
+                {
+                    ClearDeferredWatchWorkByUiSuppression();
+                }
+
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"watch ui suppression catch-up skipped: reason={reason}"
@@ -206,9 +212,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (
-                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
-            )
+            if (shouldQueueCatchUp)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
@@ -242,7 +246,7 @@ namespace IndigoMovieManager
             }
         }
 
-        // ユーザー優先で後ろへ逃がしたwatch仕事は、UI抑止中でなくても解除後のcatch-upへ必ず戻す。
+        // UI抑止由来の遅延は、UI抑止解除側の catch-up へ集約する。
         private void MarkWatchWorkDeferredForBackgroundCatchUp(string trigger)
         {
             bool shouldLog = false;

@@ -53,6 +53,8 @@ namespace IndigoMovieManager
         // DBリース所有者。アプリ起動中は固定し、UpdateStatusの所有者一致判定に使う。
         private readonly string thumbnailQueueOwnerInstanceId =
             $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+        // サムネ総数の背景走査がDB切替後に戻ってきても、古い結果を捨てるための印。
+        private long thumbnailProgressInitialCountScanStamp;
 
         // サムネイルジョブのユニークキーを生成する。
 
@@ -538,16 +540,83 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _thumbnailProgressRuntime.Reset(ResolveThumbnailProgressInitialCreatedCount());
+            _thumbnailProgressRuntime.Reset();
             ThumbnailPreviewCache.Shared.Clear();
             ThumbnailPreviewLatencyTracker.Reset();
             RequestThumbnailProgressSnapshotRefresh();
+            QueueThumbnailProgressInitialCreatedCountRefresh();
+        }
+
+        // 総作成数の全走査はUI導線から外し、DB/フォルダが同じ時だけ後追い反映する。
+        private void QueueThumbnailProgressInitialCreatedCountRefresh()
+        {
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            long scanStamp = Interlocked.Increment(ref thumbnailProgressInitialCountScanStamp);
+            if (string.IsNullOrWhiteSpace(thumbFolder))
+            {
+                return;
+            }
+
+            _ = Task.Run(() => ResolveThumbnailProgressInitialCreatedCount(thumbFolder))
+                .ContinueWith(
+                    task =>
+                    {
+                        if (task.IsFaulted)
+                        {
+                            DebugRuntimeLog.Write(
+                                "thumbnail-progress",
+                                $"initial created count scan task failed: folder='{thumbFolder}' err='{task.Exception?.GetBaseException().Message}'"
+                            );
+                            return;
+                        }
+
+                        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                        {
+                            return;
+                        }
+
+                        _ = Dispatcher.BeginInvoke(
+                            new Action(
+                                () =>
+                                {
+                                    if (
+                                        scanStamp != thumbnailProgressInitialCountScanStamp
+                                        || !AreSameMainDbPath(
+                                            dbFullPath,
+                                            MainVM?.DbInfo?.DBFullPath ?? ""
+                                        )
+                                        || !string.Equals(
+                                            thumbFolder,
+                                            MainVM?.DbInfo?.ThumbFolder ?? "",
+                                            StringComparison.OrdinalIgnoreCase
+                                        )
+                                    )
+                                    {
+                                        return;
+                                    }
+
+                                    _thumbnailProgressRuntime.ApplyInitialTotalCreatedCount(
+                                        task.Result
+                                    );
+                                    RequestThumbnailProgressSnapshotRefresh();
+                                }
+                            ),
+                            DispatcherPriority.Background
+                        );
+                    },
+                    TaskScheduler.Default
+                );
         }
 
         // 総作成の初期値は、現在DBのサムネイルフォルダに実在するファイル数をそのまま使う。
         private long ResolveThumbnailProgressInitialCreatedCount()
         {
-            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            return ResolveThumbnailProgressInitialCreatedCount(MainVM?.DbInfo?.ThumbFolder ?? "");
+        }
+
+        private static long ResolveThumbnailProgressInitialCreatedCount(string thumbFolder)
+        {
             if (string.IsNullOrWhiteSpace(thumbFolder) || !Directory.Exists(thumbFolder))
             {
                 return 0;

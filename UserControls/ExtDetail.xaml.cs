@@ -442,7 +442,7 @@ namespace IndigoMovieManager.UserControls
             }
         }
 
-        private void FileNameLink_Click(object sender, RoutedEventArgs e)
+        private async void FileNameLink_Click(object sender, RoutedEventArgs e)
         {
             // ファイル名リンクは完全一致検索（"..."）としてSearchBoxへ投入する。
             // DataContext からファイル名を取得
@@ -457,20 +457,11 @@ namespace IndigoMovieManager.UserControls
                 return;
             }
 
-            // ダブルクォーテーションで括ってSearchBoxとViewModelにセット
             var quoted = $"\"{record.Movie_Body}\"";
-            ownerWindow.SearchBox.Text = quoted;
-            ownerWindow.MainVM.DbInfo.SearchKeyword = quoted;
-
-            // 検索処理を実行
-            ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
-            ownerWindow.SelectFirstItem();
-
-            // SearchBoxにフォーカスを当てる
-            ownerWindow.SearchBox.Focus();
+            await ownerWindow.ApplySearchKeywordFromLinkAsync(quoted);
         }
 
-        private void Ext_Click(object sender, RoutedEventArgs e)
+        private async void Ext_Click(object sender, RoutedEventArgs e)
         {
             // 拡張子リンクは拡張子検索としてSearchBoxへ投入する。
             MainWindow ownerWindow = Window.GetWindow(this) as MainWindow;
@@ -491,16 +482,7 @@ namespace IndigoMovieManager.UserControls
                 return;
             }
 
-            // 検索キーワードもViewModelに反映
-            ownerWindow.SearchBox.Text = mv.Ext;
-            ownerWindow.MainVM.DbInfo.SearchKeyword = mv.Ext;
-
-            // 検索処理を実行
-            ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
-            ownerWindow.SelectFirstItem();
-
-            // SearchBoxにフォーカスを当てる
-            ownerWindow.SearchBox.Focus();
+            await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Ext);
         }
 
         private static int ResolveDetailThumbnailDecodePixelHeight(string mode)

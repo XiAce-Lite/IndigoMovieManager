@@ -46,14 +46,17 @@ public sealed class MainWindowFilterSortExecutionPolicyTests
         string searchSource = GetRepoText("Views", "Main", "MainWindow.Search.cs");
         string tagSource = GetRepoText("UserControls", "TagControl.xaml.cs");
         string detailSource = GetRepoText("UserControls", "ExtDetail.xaml.cs");
+        string bookmarkSource = GetRepoText("UserControls", "Bookmark.xaml.cs");
 
         Assert.That(searchSource, Does.Contain("public async Task ApplySearchKeywordFromLinkAsync("));
         Assert.That(searchSource, Does.Contain("SearchExecutor.ExecuteAsync(keyword ?? \"\", syncSearchText: true)"));
         Assert.That(tagSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(keyword);"));
         Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(quoted);"));
         Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Ext);"));
+        Assert.That(bookmarkSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Movie_Body ?? \"\");"));
         Assert.That(tagSource, Does.Not.Contain("FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);"));
         Assert.That(detailSource, Does.Not.Contain("FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);"));
+        Assert.That(bookmarkSource, Does.Not.Contain("ownerWindow.SearchBox.Text ="));
     }
 
     private static string GetRepoText(params string[] relativePathParts)

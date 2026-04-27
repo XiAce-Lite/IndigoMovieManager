@@ -352,7 +352,8 @@ namespace IndigoMovieManager
 
         public async Task ApplySearchKeywordFromLinkAsync(string keyword)
         {
-            // タグ・詳細リンク検索も検索正本へ合流させ、通常時のDB再読込を避ける。
+            // タグ・詳細・ブックマークリンク検索を検索正本へ合流させ、
+            // 通常時のDB再読込を避ける。
             await SearchExecutor.ExecuteAsync(keyword ?? "", syncSearchText: true);
             SearchBox.Focus();
         }

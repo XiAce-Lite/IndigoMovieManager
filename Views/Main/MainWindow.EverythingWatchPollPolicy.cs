@@ -83,7 +83,11 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            MarkWatchWorkDeferredForBackgroundCatchUp("user-priority:everything-poll");
+            if (!TryMarkWatchWorkDeferredForUserPriorityCatchUp("user-priority:everything-poll"))
+            {
+                return false;
+            }
+
             DebugRuntimeLog.Write(
                 "watch-check",
                 "everything poll deferred by user priority"

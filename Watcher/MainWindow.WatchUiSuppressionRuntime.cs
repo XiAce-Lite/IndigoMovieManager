@@ -26,9 +26,11 @@ namespace IndigoMovieManager
                     IsUserPriorityWorkActive(),
                     mode == CheckMode.Manual
                 )
+                && TryMarkWatchWorkDeferredForUserPriorityCatchUp(
+                    $"check-start-user-priority:{mode}"
+                )
             )
             {
-                MarkWatchWorkDeferredForBackgroundCatchUp($"check-start-user-priority:{mode}");
                 return true;
             }
 
@@ -242,7 +244,7 @@ namespace IndigoMovieManager
             }
         }
 
-        // ユーザー優先で後ろへ逃がしたwatch仕事は、UI抑止中でなくても解除後のcatch-upへ必ず戻す。
+        // UI抑止由来の遅延は、UI抑止解除側の catch-up へ集約する。
         private void MarkWatchWorkDeferredForBackgroundCatchUp(string trigger)
         {
             bool shouldLog = false;

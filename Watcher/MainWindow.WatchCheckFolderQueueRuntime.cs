@@ -119,9 +119,9 @@ namespace IndigoMovieManager
                     IsUserPriorityWorkActive(),
                     mode == CheckMode.Manual
                 )
+                && TryMarkWatchWorkDeferredForUserPriorityCatchUp($"user-priority:{trigger}")
             )
             {
-                MarkWatchWorkDeferredForBackgroundCatchUp($"user-priority:{trigger}");
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"scan request deferred by user priority: mode={mode} trigger={trigger}"

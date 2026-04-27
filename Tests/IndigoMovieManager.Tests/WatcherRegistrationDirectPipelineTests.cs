@@ -901,6 +901,42 @@ public sealed class WatcherRegistrationDirectPipelineTests
         );
     }
 
+    [Test]
+    public async Task ProcessCreatedWatchEventAsync_Shutdown開始後はready後の再走査を積まない()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "shutdown-created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+
+        try
+        {
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            int queueCheckRequestedCount = 0;
+            window.QueueCheckFolderAsyncRequestedForTesting = (_, _) => queueCheckRequestedCount++;
+
+            MethodInfo beginShutdownMethod = typeof(MainWindow).GetMethod(
+                "BeginWatchEventQueueShutdownForClosing",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            beginShutdownMethod.Invoke(window, null);
+
+            MethodInfo method = GetProcessCreatedWatchEventAsyncMethod();
+            Task task = (Task)method.Invoke(window, [createdMoviePath])!;
+            await task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.That(queueCheckRequestedCount, Is.EqualTo(0));
+            Assert.That(GetPrivateField<bool>(window, "_hasPendingCheckFolderRequest"), Is.False);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     private static MainWindow CreateMainWindow(string dbFullPath, int currentTabIndex)
     {
         MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
@@ -943,6 +979,16 @@ public sealed class WatcherRegistrationDirectPipelineTests
             binder: null,
             types: [requestType, typeof(string)],
             modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return method;
+    }
+
+    private static MethodInfo GetProcessCreatedWatchEventAsyncMethod()
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ProcessCreatedWatchEventAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
         )!;
         Assert.That(method, Is.Not.Null);
         return method;

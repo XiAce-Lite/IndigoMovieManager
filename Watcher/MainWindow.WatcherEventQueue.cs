@@ -63,6 +63,7 @@ namespace IndigoMovieManager
         // Closing開始後は新規イベント受付を止め、現在走っているqueue/taskだけを穏当にdrainする。
         private void BeginWatchEventQueueShutdownForClosing()
         {
+            BeginCheckFolderQueueShutdownForClosing();
             lock (_watchEventRequestSync)
             {
                 _watchEventShutdownRequested = true;

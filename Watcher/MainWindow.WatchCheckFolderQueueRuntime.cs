@@ -15,6 +15,7 @@ namespace IndigoMovieManager
         private CheckMode _runningCheckFolderMode = CheckMode.Auto;
         private bool _hasPendingManualReloadDeferredRescueSuppression;
         private bool _isRunningManualReloadDeferredRescueSuppression;
+        private bool _isCheckFolderQueueShutdownRequested;
 
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
@@ -25,6 +26,11 @@ namespace IndigoMovieManager
         /// </summary>
         private Task QueueCheckFolderAsync(CheckMode mode, string trigger)
         {
+            if (TryRejectQueueCheckFolderRequestForShutdown(mode, trigger))
+            {
+                return Task.CompletedTask;
+            }
+
             if (TryInvokeQueueCheckFolderTestHook(mode, trigger, out Task testTask))
             {
                 return testTask;
@@ -49,6 +55,35 @@ namespace IndigoMovieManager
                 $"scan request queued: mode={mode} trigger={trigger}"
             );
             return ProcessCheckFolderQueueAsync();
+        }
+
+        private void BeginCheckFolderQueueShutdownForClosing()
+        {
+            lock (_checkFolderRequestSync)
+            {
+                _isCheckFolderQueueShutdownRequested = true;
+                _hasPendingCheckFolderRequest = false;
+            }
+        }
+
+        private bool TryRejectQueueCheckFolderRequestForShutdown(CheckMode mode, string trigger)
+        {
+            bool isShutdownRequested;
+            lock (_checkFolderRequestSync)
+            {
+                isShutdownRequested = _isCheckFolderQueueShutdownRequested;
+            }
+
+            if (!isShutdownRequested)
+            {
+                return false;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"scan request skipped by shutdown: mode={mode} trigger={trigger}"
+            );
+            return true;
         }
 
         // テストフックが差し込まれている時だけ、通常キューを通さずに観測を優先する。

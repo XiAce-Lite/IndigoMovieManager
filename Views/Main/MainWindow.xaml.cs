@@ -1207,6 +1207,10 @@ namespace IndigoMovieManager
                     {
                         MarkWatchWorkDeferredWhileSuppressed("everything-poll");
                     }
+                    else if (TryDeferEverythingWatchPollForUserPriority())
+                    {
+                        // 明示操作が終わった後の catch-up へ任せ、この周回では入口判定まで進めない。
+                    }
                     else if (ShouldRunEverythingWatchPollPolicy())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");

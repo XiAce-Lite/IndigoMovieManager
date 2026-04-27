@@ -64,6 +64,33 @@ namespace IndigoMovieManager
             return false;
         }
 
+        // 明示操作中の Everything poll は入口で止め、重い eligible 判定へ入る前に catch-up へ逃がす。
+        internal static bool ShouldDeferEverythingWatchPollForUserPriority(
+            bool isUserPriorityActive
+        )
+        {
+            return ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive,
+                isManualMode: false
+            );
+        }
+
+        // poll 自体は定期処理なので、検索などの明示操作中は1周見送り、解除後のwatchで追いつく。
+        private bool TryDeferEverythingWatchPollForUserPriority()
+        {
+            if (!ShouldDeferEverythingWatchPollForUserPriority(IsUserPriorityWorkActive()))
+            {
+                return false;
+            }
+
+            MarkWatchWorkDeferredForBackgroundCatchUp("user-priority:everything-poll");
+            DebugRuntimeLog.Write(
+                "watch-check",
+                "everything poll deferred by user priority"
+            );
+            return true;
+        }
+
         // 混雑度と直近の静かさを見て、Everything poll の待機間隔を決める。
         private int ResolveEverythingWatchPollDelayFromState(int queueActiveCount)
         {

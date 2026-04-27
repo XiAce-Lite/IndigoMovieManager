@@ -351,6 +351,24 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void TryDeferEverythingWatchPollForUserPriority_検索優先中はpollをcatch_upへ逃がす()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_userPriorityWorkSync", new object());
+
+        InvokeVoid(window, "BeginUserPriorityWork", "search");
+
+        bool deferred = InvokeBool(window, "TryDeferEverythingWatchPollForUserPriority");
+
+        Assert.That(deferred, Is.True);
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.True
+        );
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_suppression中は最後のFilterAndSortを走らせずdeferへ戻す()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();

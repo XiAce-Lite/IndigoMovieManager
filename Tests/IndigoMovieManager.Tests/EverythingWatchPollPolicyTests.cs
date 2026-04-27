@@ -157,6 +157,19 @@ public sealed class EverythingWatchPollPolicyTests
     }
 
     [Test]
+    public void ShouldDeferEverythingWatchPollForUserPriority_検索優先中だけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldDeferEverythingWatchPollForUserPriority(isUserPriorityActive: true),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldDeferEverythingWatchPollForUserPriority(isUserPriorityActive: false),
+            Is.False
+        );
+    }
+
+    [Test]
     public void ShouldRunEverythingWatchPoll_eligibleなwatchがあれば動かす()
     {
         string dbPath = System.IO.Path.GetTempFileName();

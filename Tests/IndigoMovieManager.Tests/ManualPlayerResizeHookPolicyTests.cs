@@ -172,6 +172,11 @@ public sealed class ManualPlayerResizeHookPolicyTests
             upperTabPlayerSource,
             Does.Contain("if (ReferenceEquals(list.SelectedItem, record))")
         );
+        Assert.That(upperTabPlayerSource, Does.Contain("bool activeListSelectionChanged = false;"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (activeListSelectionChanged)")
+        );
         Assert.That(
             upperTabPlayerSource,
             Does.Contain("if (!ReferenceEquals(list.SelectedItem, selectedMovie))")
@@ -192,14 +197,48 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
+    public void PlayerDispatcherBackgroundWait_同時待機は1本へ畳む()
+    {
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("private DispatcherOperation _playerBackgroundYieldOperation;")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("private async Task WaitForPlayerDispatcherBackgroundAsync()")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("pendingOperation = Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("_playerBackgroundYieldOperation = pendingOperation;")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("await WaitForPlayerDispatcherBackgroundAsync();")
+        );
+    }
+
+    [Test]
     public void OpenMovieInPlayerTabAsync_Player操作中はuser_priority_scopeで囲む()
     {
         // Player 再生開始中は watch/poll を後ろへ逃がし、早期 return でも必ず解除する。
         string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+        string mainWindowPlayerSource = GetMainWindowPlayerSourceText();
+        string mainWindowXaml = GetRepoText("Views", "Main", "MainWindow.xaml");
 
         Assert.That(upperTabPlayerSource, Does.Contain("BeginUserPriorityWork(\"player\");"));
         Assert.That(upperTabPlayerSource, Does.Contain("MarkPlayerUserPriorityReleasePending();"));
         Assert.That(upperTabPlayerSource, Does.Contain("ReleasePendingPlayerUserPriorityWork();"));
+        Assert.That(upperTabPlayerSource, Does.Contain("if (!e.IsSuccess || !_isWebViewPlayerActive)"));
+        Assert.That(upperTabPlayerSource, Does.Contain("_hasPendingWebViewPlaybackRequest = false;"));
+        Assert.That(mainWindowXaml, Does.Contain("MediaFailed=\"UxVideoPlayer_MediaFailed\""));
+        Assert.That(mainWindowPlayerSource, Does.Contain("private void UxVideoPlayer_MediaFailed("));
+        Assert.That(mainWindowPlayerSource, Does.Contain("_hasPendingPlayerPlaybackRequest = false;"));
         Assert.That(upperTabPlayerSource, Does.Contain("try"));
         Assert.That(upperTabPlayerSource, Does.Contain("finally"));
         Assert.That(upperTabPlayerSource, Does.Contain("EndUserPriorityWork(\"player\");"));

@@ -731,6 +731,7 @@
                               x:Name="uxVideoPlayer"
                               Grid.Row="0"
                               LoadedBehavior="Manual"
+                              MediaFailed="UxVideoPlayer_MediaFailed"
                               MediaOpened="UxVideoPlayer_MediaOpened"
                               PreviewMouseDown="UxVideoPlayer_PreviewMouseDown"
                               ScrubbingEnabled="true"

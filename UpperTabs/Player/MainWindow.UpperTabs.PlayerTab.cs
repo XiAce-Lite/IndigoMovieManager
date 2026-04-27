@@ -41,6 +41,7 @@ namespace IndigoMovieManager
         private bool _isHandlingWebViewNativeFullscreenRequest;
         private bool _isSyncingDetachedWindowDomFullscreen;
         private Task<CoreWebView2Environment> _playerWebViewEnvironmentTask;
+        private DispatcherOperation _playerBackgroundYieldOperation;
         private string _currentPlayerMoviePath = "";
         private string _currentWebViewPlayerPath = "";
 
@@ -110,6 +111,8 @@ namespace IndigoMovieManager
             }
 
             bool selectionChanged = false;
+            bool activeListSelectionChanged = false;
+            ListView activeList = GetUpperTabPlayerList();
             foreach (ListView list in GetAllUpperTabPlayerLists())
             {
                 if (ReferenceEquals(list.SelectedItem, record))
@@ -119,11 +122,15 @@ namespace IndigoMovieManager
 
                 list.SelectedItem = record;
                 selectionChanged = true;
+                if (ReferenceEquals(list, activeList))
+                {
+                    activeListSelectionChanged = true;
+                }
             }
 
-            if (selectionChanged)
+            if (activeListSelectionChanged)
             {
-                // 同じ選択の再同期ではスクロールと可視範囲更新を積み直さない。
+                // 表示中リストの選択が変わった時だけ再スクロールし、裏側List同期だけでは積み直さない。
                 GetUpperTabPlayerList()?.ScrollIntoView(record);
             }
 
@@ -280,7 +287,7 @@ namespace IndigoMovieManager
                         }
 
                         SelectUpperTabByFixedIndex(PlayerTabIndex);
-                        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                        await WaitForPlayerDispatcherBackgroundAsync();
                     }
                     finally
                     {
@@ -422,6 +429,39 @@ namespace IndigoMovieManager
             EndUserPriorityWork("player");
         }
 
+        // 同一タイミングの no-op Dispatcher 待機は1本へ畳み、選択連打時の積み過ぎを抑える。
+        private async Task WaitForPlayerDispatcherBackgroundAsync()
+        {
+            if (Dispatcher == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            DispatcherOperation pendingOperation = _playerBackgroundYieldOperation;
+            if (
+                pendingOperation == null
+                || pendingOperation.Status == DispatcherOperationStatus.Completed
+                || pendingOperation.Status == DispatcherOperationStatus.Aborted
+            )
+            {
+                pendingOperation = Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                _playerBackgroundYieldOperation = pendingOperation;
+            }
+
+            try
+            {
+                await pendingOperation.Task;
+            }
+            catch (InvalidOperationException)
+            {
+                // shutdown 競合時はここで止めず、次の操作へ進める。
+            }
+            catch (TaskCanceledException)
+            {
+                // Dispatcher 側で中断された待機は安全に捨てる。
+            }
+        }
+
         // Source 差し替えと MediaOpened の間でも、再生要求を落とさず持ち運ぶ。
         private void RememberPendingPlayerPlaybackRequest(
             int startMilliseconds,
@@ -477,7 +517,7 @@ namespace IndigoMovieManager
                 }
                 else
                 {
-                    await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                    await WaitForPlayerDispatcherBackgroundAsync();
                     uxVideoPlayer.Pause();
                     IsPlaying = false;
                     StopDispatcherTimerSafely(timer, nameof(timer));
@@ -735,6 +775,8 @@ namespace IndigoMovieManager
             _suppressPlayerThumbnailSelectionChanged = true;
             try
             {
+                bool activeListSelectionChanged = false;
+                ListView activeList = GetUpperTabPlayerList();
                 foreach (ListView list in GetAllUpperTabPlayerLists())
                 {
                     if (ReferenceEquals(list.SelectedItem, selectedMovie))
@@ -743,9 +785,16 @@ namespace IndigoMovieManager
                     }
 
                     list.SelectedItem = selectedMovie;
+                    if (ReferenceEquals(list, activeList))
+                    {
+                        activeListSelectionChanged = true;
+                    }
                 }
 
-                GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);
+                if (activeListSelectionChanged)
+                {
+                    GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);
+                }
             }
             finally
             {
@@ -889,6 +938,8 @@ namespace IndigoMovieManager
         {
             if (!e.IsSuccess || !_isWebViewPlayerActive)
             {
+                _hasPendingWebViewPlaybackRequest = false;
+                ReleasePendingPlayerUserPriorityWork();
                 return;
             }
 
@@ -983,7 +1034,7 @@ namespace IndigoMovieManager
                     })();
                     """
                 );
-                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                await WaitForPlayerDispatcherBackgroundAsync();
                 await OpenMainWindowPlayerFullscreenAsync();
             }
             catch (Exception ex)

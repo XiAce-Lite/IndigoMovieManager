@@ -379,6 +379,17 @@ namespace IndigoMovieManager
             _ = ApplyPendingPlayerPlaybackRequestAsync();
         }
 
+        private void UxVideoPlayer_MediaFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            // ロード失敗時も user-priority を解放し、背後監視を永久停止させない。
+            _hasPendingPlayerPlaybackRequest = false;
+            ReleasePendingPlayerUserPriorityWork();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"player media load failed: {e?.ErrorException?.Message ?? "unknown"}"
+            );
+        }
+
         internal static double ResolveMediaDurationMaximumMilliseconds(
             Duration naturalDuration,
             double fallbackMaximum

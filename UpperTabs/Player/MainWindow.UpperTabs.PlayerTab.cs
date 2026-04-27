@@ -101,19 +101,32 @@ namespace IndigoMovieManager
             return items;
         }
 
-        private void SelectUpperTabPlayerMovieRecord(MovieRecords record)
+        private bool SelectUpperTabPlayerMovieRecord(MovieRecords record)
         {
             if (record == null)
             {
-                return;
+                return false;
             }
 
+            bool selectionChanged = false;
             foreach (ListView list in GetAllUpperTabPlayerLists())
             {
+                if (ReferenceEquals(list.SelectedItem, record))
+                {
+                    continue;
+                }
+
                 list.SelectedItem = record;
+                selectionChanged = true;
             }
 
-            GetUpperTabPlayerList()?.ScrollIntoView(record);
+            if (selectionChanged)
+            {
+                // 同じ選択の再同期ではスクロールと可視範囲更新を積み直さない。
+                GetUpperTabPlayerList()?.ScrollIntoView(record);
+            }
+
+            return selectionChanged;
         }
 
         // プレイヤータブへ飛ばす時だけ、選択イベントの自動再生を一時停止して狙った動画へ揃える。
@@ -125,16 +138,20 @@ namespace IndigoMovieManager
             }
 
             _suppressPlayerThumbnailSelectionChanged = true;
+            bool selectionChanged = false;
             try
             {
-                SelectUpperTabPlayerMovieRecord(record);
+                selectionChanged = SelectUpperTabPlayerMovieRecord(record);
             }
             finally
             {
                 _suppressPlayerThumbnailSelectionChanged = false;
             }
 
-            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+            if (selectionChanged)
+            {
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "player-view-mode");
+            }
         }
 
         // プレイヤータブ選択時は先頭選択を揃えたうえで、左ペインへ再生内容を同期する。

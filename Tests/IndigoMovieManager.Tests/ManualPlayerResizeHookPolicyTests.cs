@@ -45,14 +45,15 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
-    public void PlayerVolume_保存値が0または100へリセットされた時は起動時に50へ戻す()
+    public void PlayerVolume_保存値が0へリセットされた時だけ起動時に50へ戻す()
     {
         string playerSource = GetMainWindowPlayerSourceText();
         string windowSource = GetRepoText("Views", "Main", "MainWindow.xaml.cs");
 
         Assert.That(playerSource, Does.Contain("private const double DefaultPlayerVolume = 0.5d;"));
         Assert.That(playerSource, Does.Contain("private static double ResolveSavedPlayerVolumeSetting(double volume)"));
-        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d || resolvedVolume >= 1d"));
+        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;"));
+        Assert.That(playerSource, Does.Not.Contain("resolvedVolume >= 1d"));
         Assert.That(
             windowSource,
             Does.Contain("ResolveSavedPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume)")
@@ -110,6 +111,36 @@ public sealed class ManualPlayerResizeHookPolicyTests
         );
         Assert.That(upperTabPlayerSource, Does.Contain("return;"));
         Assert.That(upperTabPlayerSource, Does.Contain("GetUpperTabPlayerList()?.ScrollIntoView(selectedMovie);"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("RequestUpperTabVisibleRangeRefresh(immediate: true, reason: \"player-view-mode\");")
+        );
+    }
+
+    [Test]
+    public void PlayerThumbnailSelectionSync_同一選択では再スクロールとvisible更新を積まない()
+    {
+        // プレイヤータブ内の同一動画再生では、選択同期だけで重い visible refresh を再投入しない。
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("private bool SelectUpperTabPlayerMovieRecord(MovieRecords record)")
+        );
+        Assert.That(upperTabPlayerSource, Does.Contain("bool selectionChanged = false;"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (ReferenceEquals(list.SelectedItem, record))")
+        );
+        Assert.That(upperTabPlayerSource, Does.Contain("return selectionChanged;"));
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("selectionChanged = SelectUpperTabPlayerMovieRecord(record);")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (selectionChanged)")
+        );
         Assert.That(
             upperTabPlayerSource,
             Does.Contain("RequestUpperTabVisibleRangeRefresh(immediate: true, reason: \"player-view-mode\");")

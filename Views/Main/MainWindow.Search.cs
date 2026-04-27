@@ -354,8 +354,22 @@ namespace IndigoMovieManager
         {
             // タグ・詳細・ブックマークリンク検索を検索正本へ合流させ、
             // 通常時のDB再読込を避ける。
-            await SearchExecutor.ExecuteAsync(keyword ?? "", syncSearchText: true);
-            SearchBox.Focus();
+            try
+            {
+                await SearchExecutor.ExecuteAsync(keyword ?? "", syncSearchText: true);
+                // 既に検索欄にフォーカスがある時は再要求しない。
+                if (SearchBox != null && !SearchBox.IsKeyboardFocusWithin)
+                {
+                    SearchBox.Focus();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"link search failed: {ex.GetType().Name}: {ex.Message}"
+                );
+            }
         }
 
         // 変換途中の記号入力や部分ロード中は既存の確定検索へ寄せ、通常時だけ debounce で流す。

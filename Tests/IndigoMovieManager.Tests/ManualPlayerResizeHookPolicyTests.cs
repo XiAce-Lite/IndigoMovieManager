@@ -234,10 +234,15 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(upperTabPlayerSource, Does.Contain("BeginUserPriorityWork(\"player\");"));
         Assert.That(upperTabPlayerSource, Does.Contain("MarkPlayerUserPriorityReleasePending();"));
         Assert.That(upperTabPlayerSource, Does.Contain("ReleasePendingPlayerUserPriorityWork();"));
-        Assert.That(upperTabPlayerSource, Does.Contain("if (!e.IsSuccess || !_isWebViewPlayerActive)"));
+        Assert.That(upperTabPlayerSource, Does.Contain("if (!e.IsSuccess)"));
+        Assert.That(mainWindowXaml, Does.Contain("MediaEnded=\"UxVideoPlayer_MediaEnded\""));
         Assert.That(upperTabPlayerSource, Does.Contain("_hasPendingWebViewPlaybackRequest = false;"));
+        Assert.That(mainWindowXaml, Does.Contain("NavigationStarting=\"UxWebVideoPlayer_NavigationStarting\""));
+        Assert.That(upperTabPlayerSource, Does.Contain("e.NavigationId != _pendingWebViewNavigationId"));
         Assert.That(mainWindowXaml, Does.Contain("MediaFailed=\"UxVideoPlayer_MediaFailed\""));
         Assert.That(mainWindowPlayerSource, Does.Contain("private void UxVideoPlayer_MediaFailed("));
+        Assert.That(mainWindowPlayerSource, Does.Contain("private void UxVideoPlayer_MediaEnded("));
+        Assert.That(mainWindowPlayerSource, Does.Contain("IsPlaying = false;"));
         Assert.That(mainWindowPlayerSource, Does.Contain("_hasPendingPlayerPlaybackRequest = false;"));
         Assert.That(upperTabPlayerSource, Does.Contain("try"));
         Assert.That(upperTabPlayerSource, Does.Contain("finally"));

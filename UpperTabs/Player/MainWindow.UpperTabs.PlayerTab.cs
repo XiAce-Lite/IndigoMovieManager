@@ -42,6 +42,7 @@ namespace IndigoMovieManager
         private bool _isSyncingDetachedWindowDomFullscreen;
         private Task<CoreWebView2Environment> _playerWebViewEnvironmentTask;
         private DispatcherOperation _playerBackgroundYieldOperation;
+        private ulong _pendingWebViewNavigationId;
         private string _currentPlayerMoviePath = "";
         private string _currentWebViewPlayerPath = "";
 
@@ -931,14 +932,36 @@ namespace IndigoMovieManager
             }
         }
 
+        private void UxWebVideoPlayer_NavigationStarting(
+            object sender,
+            CoreWebView2NavigationStartingEventArgs e
+        )
+        {
+            if (_isWebViewPlayerActive)
+            {
+                _pendingWebViewNavigationId = e.NavigationId;
+            }
+        }
+
         private async void UxWebVideoPlayer_NavigationCompleted(
             object sender,
             CoreWebView2NavigationCompletedEventArgs e
         )
         {
-            if (!e.IsSuccess || !_isWebViewPlayerActive)
+            if (!_isWebViewPlayerActive)
+            {
+                return;
+            }
+
+            if (e.NavigationId != _pendingWebViewNavigationId)
+            {
+                return;
+            }
+
+            if (!e.IsSuccess)
             {
                 _hasPendingWebViewPlaybackRequest = false;
+                IsPlaying = false;
                 ReleasePendingPlayerUserPriorityWork();
                 return;
             }

@@ -382,12 +382,22 @@ namespace IndigoMovieManager
         private void UxVideoPlayer_MediaFailed(object sender, ExceptionRoutedEventArgs e)
         {
             // ロード失敗時も user-priority を解放し、背後監視を永久停止させない。
+            IsPlaying = false;
             _hasPendingPlayerPlaybackRequest = false;
             ReleasePendingPlayerUserPriorityWork();
+            StopDispatcherTimerSafely(timer, nameof(timer));
             DebugRuntimeLog.Write(
                 "ui-tempo",
                 $"player media load failed: {e?.ErrorException?.Message ?? "unknown"}"
             );
+        }
+
+        private void UxVideoPlayer_MediaEnded(object sender, RoutedEventArgs e)
+        {
+            // 再生終了後は poll の再生中扱いを解除し、通常の監視間隔へ戻す。
+            IsPlaying = false;
+            StopDispatcherTimerSafely(timer, nameof(timer));
+            UpdatePlayerPositionUi(uxVideoPlayer.Position);
         }
 
         internal static double ResolveMediaDurationMaximumMilliseconds(

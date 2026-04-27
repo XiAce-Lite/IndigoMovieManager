@@ -154,6 +154,7 @@ namespace IndigoMovieManager
             bool wasSuppressed;
             bool isStillSuppressed;
             bool hasDeferredWatchWork;
+            bool shouldQueueCatchUp;
             bool shouldSkipCatchUp;
             lock (_watchUiSuppressionSync)
             {
@@ -174,13 +175,12 @@ namespace IndigoMovieManager
                 isStillSuppressed = _watchUiSuppressionCount > 0;
                 hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
                 shouldSkipCatchUp = ShouldSkipWatchCatchUpAfterUiSuppression(reason);
-                if (
-                    wasSuppressed
+                shouldQueueCatchUp = wasSuppressed
                     && ShouldQueueWatchCatchUpAfterUiSuppression(
                         isStillSuppressed,
                         hasDeferredWatchWork
-                    )
-                )
+                    );
+                if (shouldQueueCatchUp && !shouldSkipCatchUp)
                 {
                     _watchWorkDeferredWhileSuppressed = false;
                 }
@@ -196,11 +196,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("watch-check", $"watch ui suppression end: reason={reason}");
             }
 
-            if (
-                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
-                && shouldSkipCatchUp
-            )
+            if (shouldQueueCatchUp && shouldSkipCatchUp)
             {
+                // manual-reload 解除時に user-priority が残っている場合は、
+                // defer を user-priority 側の resume へ引き渡して取りこぼしを防ぐ。
+                if (!IsUserPriorityWorkActive())
+                {
+                    ClearDeferredWatchWorkByUiSuppression();
+                }
+
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"watch ui suppression catch-up skipped: reason={reason}"
@@ -208,9 +212,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (
-                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
-            )
+            if (shouldQueueCatchUp)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",

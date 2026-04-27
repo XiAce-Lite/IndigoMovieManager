@@ -1879,10 +1879,15 @@ namespace IndigoMovieManager
                 startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
                 isGetNew: isGetNew
             );
+            string fullReloadReason = MainWindow.ResolveFilterSortFullReloadReason(
+                hasSnapshotData: latestMovieData != null,
+                startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
+                isGetNew: isGetNew
+            );
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter start: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
+                $"filter start: revision={requestRevision} sort={id} route={executionRoute} full_reload_reason={fullReloadReason} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
             );
 
             if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
@@ -2064,7 +2069,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} route={executionRoute} full_reload_reason={fullReloadReason} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -2463,6 +2468,26 @@ namespace IndigoMovieManager
             return ((!hasSnapshotData && !startupFeedLoadedAllPages) || isGetNew)
                 ? "full-reload"
                 : "query-only";
+        }
+
+        // full reload へ戻る理由を短い札にし、次の差分化候補をログから拾えるようにする。
+        internal static string ResolveFilterSortFullReloadReason(
+            bool hasSnapshotData,
+            bool startupFeedLoadedAllPages,
+            bool isGetNew
+        )
+        {
+            if (isGetNew)
+            {
+                return "is-get-new";
+            }
+
+            if (!hasSnapshotData && !startupFeedLoadedAllPages)
+            {
+                return "no-snapshot-startup-partial";
+            }
+
+            return "none";
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

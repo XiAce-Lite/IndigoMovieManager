@@ -25,6 +25,28 @@ public sealed class MainWindowFilterSortExecutionPolicyTests
         Assert.That(actual, Is.EqualTo(expected));
     }
 
+    [TestCase(false, false, false, "no-snapshot-startup-partial")]
+    [TestCase(false, true, false, "none")]
+    [TestCase(true, false, false, "none")]
+    [TestCase(true, true, false, "none")]
+    [TestCase(false, false, true, "is-get-new")]
+    [TestCase(true, true, true, "is-get-new")]
+    public void ResolveFilterSortFullReloadReason_full_reload理由を短い札で返せる(
+        bool hasSnapshotData,
+        bool startupFeedLoadedAllPages,
+        bool isGetNew,
+        string expected
+    )
+    {
+        string actual = MainWindow.ResolveFilterSortFullReloadReason(
+            hasSnapshotData,
+            startupFeedLoadedAllPages,
+            isGetNew
+        );
+
+        Assert.That(actual, Is.EqualTo(expected));
+    }
+
     [TestCase(-1, false)]
     [TestCase(0, false)]
     [TestCase(1, false)]
@@ -50,6 +72,9 @@ public sealed class MainWindowFilterSortExecutionPolicyTests
 
         Assert.That(searchSource, Does.Contain("public async Task ApplySearchKeywordFromLinkAsync("));
         Assert.That(searchSource, Does.Contain("SearchExecutor.ExecuteAsync(keyword ?? \"\", syncSearchText: true)"));
+        Assert.That(searchSource, Does.Contain("if (SearchBox != null && !SearchBox.IsKeyboardFocusWithin)"));
+        Assert.That(searchSource, Does.Contain("catch (Exception ex)"));
+        Assert.That(searchSource, Does.Contain("link search failed:"));
         Assert.That(tagSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(keyword);"));
         Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(quoted);"));
         Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Ext);"));

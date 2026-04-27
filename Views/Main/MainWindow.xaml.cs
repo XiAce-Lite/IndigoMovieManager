@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
@@ -1700,14 +1701,21 @@ namespace IndigoMovieManager
         {
             // 現在のテキストを一時保存
             string currentText = SearchBox?.Text ?? "";
+            ApplySearchHistoryRecords(
+                SearchHistoryService.LoadLatestHistory(dbFullPath),
+                currentText
+            );
+        }
 
+        private void ApplySearchHistoryRecords(IEnumerable<History> historyRecords, string currentText)
+        {
             bool previousSuppressState = _suppressSearchBoxTextChangedHandling;
             _suppressSearchBoxTextChangedHandling = true;
             try
             {
                 historyData = null;
                 MainVM.HistoryRecs.Clear();
-                foreach (History item in SearchHistoryService.LoadLatestHistory(dbFullPath))
+                foreach (History item in historyRecords ?? [])
                 {
                     MainVM.HistoryRecs.Add(item);
                 }

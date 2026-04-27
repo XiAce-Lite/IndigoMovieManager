@@ -1323,6 +1323,9 @@ namespace IndigoMovieManager
             _hasPendingWebViewPlaybackRequest = false;
             _isWebViewPlayerActive = false;
             _currentWebViewPlayerPath = "";
+            _pendingWebViewNavigationId = 0;
+            // WebView停止・切替では NavigationCompleted が後着するため、ここでユーザー優先区間を畳む。
+            ReleasePendingPlayerUserPriorityWork();
 
             if (uxWebVideoPlayer == null)
             {

@@ -2102,6 +2102,7 @@ namespace IndigoMovieManager
             int searchCount = 0;
             bool usedChangedPathRefresh = false;
             bool canReuseCurrentOrder = false;
+            string changedPathFallbackReason = "none";
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
@@ -2111,7 +2112,7 @@ namespace IndigoMovieManager
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             await Task.Run(() =>
             {
-                usedChangedPathRefresh = TryBuildChangedMovieRefreshSource(
+                usedChangedPathRefresh = TryBuildChangedMovieRefreshSourceWithReason(
                     sourceMovies,
                     currentFilteredMovies,
                     searchKeyword,
@@ -2119,7 +2120,8 @@ namespace IndigoMovieManager
                     changedMovies,
                     MainVM.FilterMovies,
                     out filtered,
-                    out canReuseCurrentOrder
+                    out canReuseCurrentOrder,
+                    out changedPathFallbackReason
                 );
                 if (!usedChangedPathRefresh)
                 {
@@ -2184,7 +2186,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} changed_path_fallback={changedPathFallbackReason} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -2268,11 +2270,44 @@ namespace IndigoMovieManager
             out bool canReuseCurrentOrder
         )
         {
+            return TryBuildChangedMovieRefreshSourceWithReason(
+                sourceMovies,
+                currentFilteredMovies,
+                searchKeyword,
+                sortId,
+                changedMovies,
+                filterMovies,
+                out nextFilteredMovies,
+                out canReuseCurrentOrder,
+                out _
+            );
+        }
+
+        internal static bool TryBuildChangedMovieRefreshSourceWithReason(
+            IEnumerable<MovieRecords> sourceMovies,
+            IEnumerable<MovieRecords> currentFilteredMovies,
+            string searchKeyword,
+            string sortId,
+            IEnumerable<WatchChangedMovie> changedMovies,
+            Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder,
+            out string fallbackReason
+        )
+        {
             nextFilteredMovies = [];
             canReuseCurrentOrder = false;
+            fallbackReason = "none";
             List<WatchChangedMovie> normalizedChangedMovies = MainWindow.MergeChangedMovies([], changedMovies);
-            if (normalizedChangedMovies.Count < 1 || filterMovies == null)
+            if (normalizedChangedMovies.Count < 1)
             {
+                fallbackReason = "no-changed-movies";
+                return false;
+            }
+
+            if (filterMovies == null)
+            {
+                fallbackReason = "filter-unavailable";
                 return false;
             }
 
@@ -2288,6 +2323,7 @@ namespace IndigoMovieManager
                 )
             )
             {
+                fallbackReason = "dup-hash-dirty";
                 return false;
             }
 

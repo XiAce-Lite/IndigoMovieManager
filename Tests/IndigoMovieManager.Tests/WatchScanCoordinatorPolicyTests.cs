@@ -164,6 +164,51 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ShouldSkipRedundantEverythingPollScanRequest_watch実行中のpollはskipする()
+    {
+        bool result = InvokeShouldSkipRedundantEverythingPollScanRequest(
+            modeName: "Watch",
+            trigger: "EverythingPoll",
+            isRunActive: true,
+            runningModeName: "Watch",
+            hasPendingRequest: false,
+            pendingModeName: "Auto"
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldSkipRedundantEverythingPollScanRequest_manual保留中のpollはskipする()
+    {
+        bool result = InvokeShouldSkipRedundantEverythingPollScanRequest(
+            modeName: "Watch",
+            trigger: "EverythingPoll",
+            isRunActive: false,
+            runningModeName: "Auto",
+            hasPendingRequest: true,
+            pendingModeName: "Manual"
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldSkipRedundantEverythingPollScanRequest_autoのみならpollを残す()
+    {
+        bool result = InvokeShouldSkipRedundantEverythingPollScanRequest(
+            modeName: "Watch",
+            trigger: "EverythingPoll",
+            isRunActive: true,
+            runningModeName: "Auto",
+            hasPendingRequest: true,
+            pendingModeName: "Auto"
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
     public void ResolveExistingMovieMetadataRefreshDisabledMessage_watch_everything_incremental無しなら文言を返す()
     {
         string result = InvokeResolveExistingMovieMetadataRefreshDisabledMessage(
@@ -286,6 +331,32 @@ public sealed class WatchScanCoordinatorPolicyTests
         return (int)method.Invoke(
             null,
             [hasFolderUpdate, enqueuedCount, changedMovieCount]
+        )!;
+    }
+
+    private static bool InvokeShouldSkipRedundantEverythingPollScanRequest(
+        string modeName,
+        string trigger,
+        bool isRunActive,
+        string runningModeName,
+        bool hasPendingRequest,
+        string pendingModeName
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ShouldSkipRedundantEverythingPollScanRequest",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        Type modeType = method.GetParameters()[0].ParameterType;
+        object mode = Enum.Parse(modeType, modeName);
+        object runningMode = Enum.Parse(modeType, runningModeName);
+        object pendingMode = Enum.Parse(modeType, pendingModeName);
+
+        return (bool)method.Invoke(
+            null,
+            [mode, trigger, isRunActive, runningMode, hasPendingRequest, pendingMode]
         )!;
     }
 

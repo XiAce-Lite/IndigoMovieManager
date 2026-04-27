@@ -11,6 +11,8 @@ namespace IndigoMovieManager
         private readonly object _checkFolderRequestSync = new();
         private bool _hasPendingCheckFolderRequest;
         private CheckMode _pendingCheckFolderMode = CheckMode.Auto;
+        private bool _isCheckFolderRunActive;
+        private CheckMode _runningCheckFolderMode = CheckMode.Auto;
         private bool _hasPendingManualReloadDeferredRescueSuppression;
         private bool _isRunningManualReloadDeferredRescueSuppression;
 
@@ -29,6 +31,11 @@ namespace IndigoMovieManager
             }
 
             if (TryDeferQueueCheckFolderRequest(mode, trigger))
+            {
+                return Task.CompletedTask;
+            }
+
+            if (TrySkipRedundantEverythingPollScanRequest(mode, trigger))
             {
                 return Task.CompletedTask;
             }
@@ -106,6 +113,68 @@ namespace IndigoMovieManager
             }
         }
 
+        // EverythingPoll は定期確認なので、既に Watch/Manual が走る・待つ状態なら重ねて積まない。
+        private bool TrySkipRedundantEverythingPollScanRequest(CheckMode mode, string trigger)
+        {
+            bool shouldSkip;
+            CheckMode runningMode;
+            CheckMode pendingMode;
+            lock (_checkFolderRequestSync)
+            {
+                runningMode = _runningCheckFolderMode;
+                pendingMode = _pendingCheckFolderMode;
+                shouldSkip = ShouldSkipRedundantEverythingPollScanRequest(
+                    mode,
+                    trigger,
+                    _isCheckFolderRunActive,
+                    runningMode,
+                    _hasPendingCheckFolderRequest,
+                    pendingMode
+                );
+            }
+
+            if (!shouldSkip)
+            {
+                return false;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"everything poll scan skipped as duplicate: running={runningMode} pending={pendingMode}"
+            );
+            return true;
+        }
+
+        private static bool ShouldSkipRedundantEverythingPollScanRequest(
+            CheckMode mode,
+            string trigger,
+            bool isRunActive,
+            CheckMode runningMode,
+            bool hasPendingRequest,
+            CheckMode pendingMode
+        )
+        {
+            if (
+                mode != CheckMode.Watch
+                || !string.Equals(trigger, "EverythingPoll", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return false;
+            }
+
+            if (isRunActive && IsWatchScanSupersetMode(runningMode))
+            {
+                return true;
+            }
+
+            return hasPendingRequest && IsWatchScanSupersetMode(pendingMode);
+        }
+
+        private static bool IsWatchScanSupersetMode(CheckMode mode)
+        {
+            return mode == CheckMode.Watch || mode == CheckMode.Manual;
+        }
+
         // 単一ランナーでキューを消化し、同時実行を防ぐ。
         private async Task ProcessCheckFolderQueueAsync()
         {
@@ -115,6 +184,7 @@ namespace IndigoMovieManager
             {
                 while (TryDequeuePendingCheckFolderMode(out CheckMode modeToRun))
                 {
+                    MarkCheckFolderRunActive(modeToRun);
                     bool suppressMissingThumbnailRescue =
                         TryBeginManualReloadDeferredRescueSuppression(modeToRun);
                     try
@@ -124,6 +194,7 @@ namespace IndigoMovieManager
                     finally
                     {
                         EndManualReloadDeferredRescueSuppression(suppressMissingThumbnailRescue);
+                        ClearCheckFolderRunActive(modeToRun);
                     }
                 }
             }
@@ -153,6 +224,28 @@ namespace IndigoMovieManager
                 mode = _pendingCheckFolderMode;
                 _hasPendingCheckFolderRequest = false;
                 return true;
+            }
+        }
+
+        // 実行中 mode を見える化し、poll が同種の後続走査を積む前に止められるようにする。
+        private void MarkCheckFolderRunActive(CheckMode mode)
+        {
+            lock (_checkFolderRequestSync)
+            {
+                _runningCheckFolderMode = mode;
+                _isCheckFolderRunActive = true;
+            }
+        }
+
+        private void ClearCheckFolderRunActive(CheckMode mode)
+        {
+            lock (_checkFolderRequestSync)
+            {
+                if (_isCheckFolderRunActive && _runningCheckFolderMode == mode)
+                {
+                    _isCheckFolderRunActive = false;
+                    _runningCheckFolderMode = CheckMode.Auto;
+                }
             }
         }
 

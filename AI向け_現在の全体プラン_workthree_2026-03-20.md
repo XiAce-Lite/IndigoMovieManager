@@ -4,7 +4,10 @@
 
 変更概要:
 - watch query-only 局所更新が full reload へ戻る時の理由を `changed_path_fallback` としてログへ出し、`no-changed-movies` / `filter-unavailable` / `dup-hash-dirty` を実機ログだけで切り分けられるようにした
+- watch キュー圧縮で trigger / path の因果が消えたように見える経路へログを足し、圧縮前後の理由を `debug-runtime.log` で追えるようにした
 - WebView Player の停止・切替時に pending の `user-priority` 解放を `ResetWebViewPlayerSurface()` で畳み、`NavigationCompleted` 後着時に watch / poll defer が残り続ける経路を塞いだ
+- サムネ進捗の初期 snapshot 全走査を UI 初期表示から外して背景化し、下部 `ThumbnailProgress` 初期化が first-page と入力を押しのけないようにした
+- 検索確定後の履歴保存・履歴再読込を背景化し、検索完了直後の UI 導線に残っていた DB write/read を外した
 - 全体計画を再構築し、優先軸を `UIスレッドを空ける`、`全面再評価を減らす`、`入力優先を守る` の 3 本へ整理した
 - `Watcher.cs` 薄化は目的ではなく、UI thread / queue / shutdown の詰まりを減らすための手段として位置づけ直した
 - 本線の次手を `watcher shutdown / queue 境界の安定化`、`diff-first UI の残り潰し`、`起動 warm path`、`visible-first / Player表示` の順へ組み替えた
@@ -37,6 +40,7 @@
 - 再読込ボタンは `FilterAndSort(true)` と `Manual scan` を直列化し、その間だけ `Watch / EverythingPoll` を抑止して、全件DB再構築と手動全域走査が同時に走らないようにした
 - さらに `manual-reload` 抑止解除直後の catch-up `Watch` は積まず、直前の `Manual scan` で十分な場面に `watch_zero_diff reconcile` の全量再走査を重ねないようにした
 - 下部 `ThumbnailProgress` タブが非表示の時は snapshot refresh を dirty 記録だけへ寄せ、`CreateThumbAsync` 完了ごとの hidden UI 更新を抑えて `activity=None` の後段負荷を減らし始めた
+- 下部 `ThumbnailProgress` の初期 snapshot 全走査は背景側で作り、UI には反映だけを返す形へ寄せた
 - UI を含む高速化の抜本改善プランを追加し、P4 を「全面再評価中心から差分反映中心へ変える」軸で補足
 - watch query-only reload に `changed paths` を通し、検索結果集合ベースの局所再評価を追加
 - watch change set に `ChangeKind` を追加し、empty search の局所復帰で per-path filter をさらに削減
@@ -268,6 +272,8 @@
 - さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
 - 実機ログでは `ggggg` のような ASCII 検索で `filter-movies` 詰まりが出ていたが、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索の主因は比較方式そのものより `kana / katakana` 派生列の全件生成だったと判断する
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
+- さらに検索確定後の履歴保存・履歴再読込は背景 task に逃がし、DB が同じ時だけ UI へ履歴候補を反映する形へ寄せた
+- watch query-only full 戻り理由ログ、watch キュー圧縮の因果ログ、WebView 停止時の `user-priority` pending 解放、サムネ進捗初期全走査の背景化は完了済みとして扱う
 - `UiHangNotificationCoordinator` と `NativeOverlayHost` の停止経路を確認し、オーバーレイ残留は「owner なし native popup を別スレッド dispatcher 依存で止めていること」が主因候補と整理した。直し方は `owner 付与 -> caller 側即 hide -> join timeout 後の強制閉鎖 -> shutdown 専用 safety fuse` の順に固定する
 
 ### 7.2 再構築後の次の着手順
@@ -276,7 +282,7 @@
 2. UI スレッドを塞ぐ入口を、`search / reload / Player / watcher / thumbnail / skin` の順に棚卸しし、snapshot / queue / defer / background 化のどれで解くか決める
 3. watcher / poll / shutdown は、`FileSystemWatcher` 入力停止、queue complete、created pipeline drain、Everything poll 停止の順序を固定し、bounded drain と timeout log を持たせる
 4. watch 起点の UI 再読込は、差分反映優先でさらに縮小できる箇所を切り分ける
-  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback / full reload 戻り理由ログまで。次は queue 圧縮で消える trigger / path 因果をログで追えるようにする
+  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback / full reload 戻り理由ログ / queue 圧縮因果ログまで。次は残った full 戻り条件を減らせるかを実機ログで選ぶ
 5. visible-first / Player / 画像供給は、起動 first-page とユーザー操作を優先し、off-screen decode / metadata / 補助 UI bind を後ろへ送る
 6. 検索高速化は本線内では既存 `SearchService.FilterMovies(...)` 正本を維持し、投影 cache や比較コスト削減のような仕様を変えない範囲に留める。`SearchSidecar` は別リポ検証を継続する
 7. `skin` は別レーンとして、runtime bridge の terminal / `changeSkin` 境界固定と `refresh / catalog / DB` 分離を混ぜずに進める

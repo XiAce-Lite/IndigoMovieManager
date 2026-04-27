@@ -19,6 +19,7 @@ namespace IndigoMovieManager.Thumbnail
         private int sessionCompletedCount;
         private int sessionTotalCount;
         private long totalCreatedCount;
+        private long initialTotalCreatedCountBaseline;
         private int currentParallelism;
         private int configuredParallelism;
         private long stateVersion;
@@ -36,6 +37,7 @@ namespace IndigoMovieManager.Thumbnail
                     || sessionCompletedCount != 0
                     || sessionTotalCount != 0
                     || totalCreatedCount != normalizedInitialTotalCreatedCount
+                    || initialTotalCreatedCountBaseline != normalizedInitialTotalCreatedCount
                     || currentParallelism != 0
                     || configuredParallelism != 0;
 
@@ -45,6 +47,7 @@ namespace IndigoMovieManager.Thumbnail
                 sessionCompletedCount = 0;
                 sessionTotalCount = 0;
                 totalCreatedCount = normalizedInitialTotalCreatedCount;
+                initialTotalCreatedCountBaseline = normalizedInitialTotalCreatedCount;
                 currentParallelism = 0;
                 configuredParallelism = 0;
                 if (hasAnyState)
@@ -60,12 +63,15 @@ namespace IndigoMovieManager.Thumbnail
             lock (stateLock)
             {
                 long normalizedInitialTotalCreatedCount = Math.Max(0, initialTotalCreatedCount);
-                if (totalCreatedCount == normalizedInitialTotalCreatedCount)
+                long baselineDelta =
+                    normalizedInitialTotalCreatedCount - initialTotalCreatedCountBaseline;
+                if (baselineDelta <= 0)
                 {
                     return;
                 }
 
-                totalCreatedCount = normalizedInitialTotalCreatedCount;
+                totalCreatedCount += baselineDelta;
+                initialTotalCreatedCountBaseline = normalizedInitialTotalCreatedCount;
                 MarkStateDirty();
             }
         }

@@ -215,6 +215,18 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void ApplyInitialTotalCreatedCount_背景走査中の作成済み加算を保持する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        runtime.RecordThumbnailCreated(2);
+
+        runtime.ApplyInitialTotalCreatedCount(123);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        Assert.That(snapshot.TotalCreatedCount, Is.EqualTo(125));
+    }
+
+    [Test]
     public void CreateSnapshot_無変更時は同一インスタンスを再利用する()
     {
         ThumbnailProgressRuntime runtime = new();

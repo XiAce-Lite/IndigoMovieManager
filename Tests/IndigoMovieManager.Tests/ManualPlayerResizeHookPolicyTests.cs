@@ -91,6 +91,10 @@ public sealed class ManualPlayerResizeHookPolicyTests
         );
         Assert.That(selectionSource, Does.Contain("_suppressPlayerThumbnailSelectionChanged = true;"));
         Assert.That(selectionSource, Does.Contain("SyncPlayerThumbnailSelectionAcrossViews(sourceList, record);"));
+        Assert.That(
+            selectionSource,
+            Does.Contain("if (!ReferenceEquals(sourceList.SelectedItem, record))")
+        );
         Assert.That(selectionSource, Does.Contain("ShowExtensionDetail(record);"));
         Assert.That(selectionSource, Does.Contain("ShowTagEditor(record);"));
 
@@ -118,6 +122,42 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
+    public void PlayerSurface_同一表示状態とサイズは再代入しない()
+    {
+        string mainWindowPlayerSource = GetMainWindowPlayerSourceText();
+        string upperTabPlayerSource = GetUpperTabPlayerSourceText();
+
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("private static void SetPlayerVisibilityIfChanged(UIElement element, Visibility visibility)")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("element == null || element.Visibility == visibility")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("SetPlayerVisibilityIfChanged(PlayerArea, Visibility.Visible);")
+        );
+        Assert.That(
+            mainWindowPlayerSource,
+            Does.Contain("private static void SetPlayerElementSizeIfChanged(")
+        );
+        Assert.That(
+            mainWindowPlayerSource,
+            Does.Contain("ArePlayerLayoutLengthsEqual(element.Width, width)")
+        );
+        Assert.That(
+            mainWindowPlayerSource,
+            Does.Contain("ArePlayerLayoutLengthsEqual(element.Height, height)")
+        );
+        Assert.That(
+            mainWindowPlayerSource,
+            Does.Contain("double.IsNaN(current) && double.IsNaN(next)")
+        );
+    }
+
+    [Test]
     public void PlayerThumbnailSelectionSync_同一選択では再スクロールとvisible更新を積まない()
     {
         // プレイヤータブ内の同一動画再生では、選択同期だけで重い visible refresh を再投入しない。
@@ -131,6 +171,10 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(
             upperTabPlayerSource,
             Does.Contain("if (ReferenceEquals(list.SelectedItem, record))")
+        );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("if (!ReferenceEquals(list.SelectedItem, selectedMovie))")
         );
         Assert.That(upperTabPlayerSource, Does.Contain("return selectionChanged;"));
         Assert.That(
@@ -154,6 +198,8 @@ public sealed class ManualPlayerResizeHookPolicyTests
         string upperTabPlayerSource = GetUpperTabPlayerSourceText();
 
         Assert.That(upperTabPlayerSource, Does.Contain("BeginUserPriorityWork(\"player\");"));
+        Assert.That(upperTabPlayerSource, Does.Contain("MarkPlayerUserPriorityReleasePending();"));
+        Assert.That(upperTabPlayerSource, Does.Contain("ReleasePendingPlayerUserPriorityWork();"));
         Assert.That(upperTabPlayerSource, Does.Contain("try"));
         Assert.That(upperTabPlayerSource, Does.Contain("finally"));
         Assert.That(upperTabPlayerSource, Does.Contain("EndUserPriorityWork(\"player\");"));

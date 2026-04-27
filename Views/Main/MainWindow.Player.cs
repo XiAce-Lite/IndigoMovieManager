@@ -452,8 +452,7 @@ namespace IndigoMovieManager
                 if (uxWebVideoPlayer != null)
                 {
                     // 全画面中は専用Window側で全面ストレッチさせ、MainWindow側サイズは持ち込まない。
-                    uxWebVideoPlayer.Width = double.NaN;
-                    uxWebVideoPlayer.Height = double.NaN;
+                    SetPlayerElementSizeIfChanged(uxWebVideoPlayer, double.NaN, double.NaN);
                 }
 
                 return;
@@ -486,11 +485,13 @@ namespace IndigoMovieManager
             if (_isWebViewPlayerActive)
             {
                 // WebView2 はプレイヤー枠いっぱいに広げ、内側余白だけを残して使い切る。
-                uxWebVideoPlayer.Width = availableWidth;
-                uxWebVideoPlayer.Height = availableHeight;
-                PlayerArea.Width = availableWidth;
-                PlayerArea.Height = availableHeight + controllerHeight;
-                PlayerController.Width = availableWidth;
+                SetPlayerElementSizeIfChanged(uxWebVideoPlayer, availableWidth, availableHeight);
+                SetPlayerElementSizeIfChanged(
+                    PlayerArea,
+                    availableWidth,
+                    availableHeight + controllerHeight
+                );
+                SetPlayerElementWidthIfChanged(PlayerController, availableWidth);
                 return;
             }
 
@@ -507,16 +508,67 @@ namespace IndigoMovieManager
             }
 
             // 動画面と操作バーの横幅を揃え、縦動画でも画面内へ収める。
-            uxVideoPlayer.Width = viewportSize.Width;
-            uxVideoPlayer.Height = viewportSize.Height;
+            SetPlayerElementSizeIfChanged(uxVideoPlayer, viewportSize.Width, viewportSize.Height);
             if (uxWebVideoPlayer != null)
             {
-                uxWebVideoPlayer.Width = viewportSize.Width;
-                uxWebVideoPlayer.Height = viewportSize.Height;
+                SetPlayerElementSizeIfChanged(
+                    uxWebVideoPlayer,
+                    viewportSize.Width,
+                    viewportSize.Height
+                );
             }
-            PlayerArea.Width = viewportSize.Width;
-            PlayerArea.Height = viewportSize.Height + controllerHeight;
-            PlayerController.Width = viewportSize.Width;
+            SetPlayerElementSizeIfChanged(
+                PlayerArea,
+                viewportSize.Width,
+                viewportSize.Height + controllerHeight
+            );
+            SetPlayerElementWidthIfChanged(PlayerController, viewportSize.Width);
+        }
+
+        private static void SetPlayerElementSizeIfChanged(
+            FrameworkElement element,
+            double width,
+            double height
+        )
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            SetPlayerElementWidthIfChanged(element, width);
+            SetPlayerElementHeightIfChanged(element, height);
+        }
+
+        private static void SetPlayerElementWidthIfChanged(FrameworkElement element, double width)
+        {
+            if (element == null || ArePlayerLayoutLengthsEqual(element.Width, width))
+            {
+                return;
+            }
+
+            // 同じサイズの再設定を避け、Player user-priority 後の余計な measure を抑える。
+            element.Width = width;
+        }
+
+        private static void SetPlayerElementHeightIfChanged(FrameworkElement element, double height)
+        {
+            if (element == null || ArePlayerLayoutLengthsEqual(element.Height, height))
+            {
+                return;
+            }
+
+            element.Height = height;
+        }
+
+        private static bool ArePlayerLayoutLengthsEqual(double current, double next)
+        {
+            if (double.IsNaN(current) && double.IsNaN(next))
+            {
+                return true;
+            }
+
+            return Math.Abs(current - next) < 0.0001d;
         }
 
         private void EnsureManualPlayerResizeTrackingHooked()

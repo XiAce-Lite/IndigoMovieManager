@@ -350,6 +350,13 @@ namespace IndigoMovieManager
             return FilterAndSortAsync(sortId, shouldReload);
         }
 
+        public async Task ApplySearchKeywordFromLinkAsync(string keyword)
+        {
+            // タグ・詳細リンク検索も検索正本へ合流させ、通常時のDB再読込を避ける。
+            await SearchExecutor.ExecuteAsync(keyword ?? "", syncSearchText: true);
+            SearchBox.Focus();
+        }
+
         // 変換途中の記号入力や部分ロード中は既存の確定検索へ寄せ、通常時だけ debounce で流す。
         private void QueueIncrementalSearch(string text)
         {

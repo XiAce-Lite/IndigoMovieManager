@@ -39,4 +39,38 @@ public sealed class MainWindowFilterSortExecutionPolicyTests
         bool actual = MainWindow.ShouldRunFilterSortOnBackground(sourceCount);
         Assert.That(actual, Is.EqualTo(expected));
     }
+
+    [Test]
+    public void LinkSearch_ユーザーコントロールから検索正本へ合流する()
+    {
+        string searchSource = GetRepoText("Views", "Main", "MainWindow.Search.cs");
+        string tagSource = GetRepoText("UserControls", "TagControl.xaml.cs");
+        string detailSource = GetRepoText("UserControls", "ExtDetail.xaml.cs");
+
+        Assert.That(searchSource, Does.Contain("public async Task ApplySearchKeywordFromLinkAsync("));
+        Assert.That(searchSource, Does.Contain("SearchExecutor.ExecuteAsync(keyword ?? \"\", syncSearchText: true)"));
+        Assert.That(tagSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(keyword);"));
+        Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(quoted);"));
+        Assert.That(detailSource, Does.Contain("await ownerWindow.ApplySearchKeywordFromLinkAsync(mv.Ext);"));
+        Assert.That(tagSource, Does.Not.Contain("FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);"));
+        Assert.That(detailSource, Does.Not.Contain("FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);"));
+    }
+
+    private static string GetRepoText(params string[] relativePathParts)
+    {
+        DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);
+        while (current != null)
+        {
+            string candidate = Path.Combine([current.FullName, .. relativePathParts]);
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+
+            current = current.Parent;
+        }
+
+        Assert.Fail($"Repository file not found: {Path.Combine(relativePathParts)}");
+        return "";
+    }
 }

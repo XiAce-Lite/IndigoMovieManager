@@ -897,9 +897,13 @@ namespace IndigoMovieManager
                           player.currentTime = {{seconds}};
                         } catch {}
 
+                        player.dataset.indigoPlayerHostVolumeApplying = '1';
                         player.muted = {{(mute ? "true" : "false")}};
                         player.volume = {{volume}};
                         player.dataset.indigoPlayerHostVolumeApplied = '1';
+                        setTimeout(() => {
+                          delete player.dataset.indigoPlayerHostVolumeApplying;
+                        }, 0);
 
                         const playPromise = player.play();
                         if (playPromise) {
@@ -1255,6 +1259,10 @@ namespace IndigoMovieManager
                     player.controls = true;
 
                     const notifyVolume = () => {
+                      if (player.dataset.indigoPlayerHostVolumeApplying === '1') {
+                        return;
+                      }
+
                       if (player.dataset.indigoPlayerHostVolumeApplied !== '1') {
                         return;
                       }

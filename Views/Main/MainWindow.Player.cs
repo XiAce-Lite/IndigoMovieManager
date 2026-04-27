@@ -34,11 +34,13 @@ namespace IndigoMovieManager
             return Math.Max(0d, Math.Min(1d, volume));
         }
 
-        // 保存値が初期化落ちして 0% へ戻った時は、起動時だけ既定の 50% へ戻す。
+        // 保存値が初期化落ちして 0%/100% へ戻った時は、起動時だけ既定の 50% へ戻す。
         private static double ResolveSavedPlayerVolumeSetting(double volume)
         {
             double resolvedVolume = ClampPlayerVolumeSetting(volume);
-            return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;
+            return resolvedVolume <= 0d || resolvedVolume >= 1d
+                ? DefaultPlayerVolume
+                : resolvedVolume;
         }
 
         // 画面表示と保存値を同じ音量へ寄せ、次に開く動画にもそのまま引き継ぐ。
@@ -66,7 +68,7 @@ namespace IndigoMovieManager
             }
 
             _ = uxWebVideoPlayer.ExecuteScriptAsync(
-                $"const player = document.querySelector('video'); if (player) {{ player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; }}"
+                $"const player = document.querySelector('video'); if (player) {{ player.dataset.indigoPlayerHostVolumeApplying = '1'; player.muted = false; player.volume = {resolvedVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}; player.dataset.indigoPlayerHostVolumeApplied = '1'; setTimeout(() => {{ delete player.dataset.indigoPlayerHostVolumeApplying; }}, 0); }}"
             );
         }
 
@@ -105,6 +107,15 @@ namespace IndigoMovieManager
         private void SyncPlayerVolumeFromWebView(double volume)
         {
             double resolvedVolume = ClampPlayerVolumeSetting(volume);
+            double currentVolume = ClampPlayerVolumeSetting(uxVolumeSlider?.Value ?? DefaultPlayerVolume);
+            if (resolvedVolume >= 1d && currentVolume < 0.999d)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"player webview default volume ignored: incoming={resolvedVolume:0.###} current={currentVolume:0.###}"
+                );
+                return;
+            }
 
             _isPlayerVolumeSyncingFromWebView = true;
             try

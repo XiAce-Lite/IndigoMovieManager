@@ -45,15 +45,14 @@ public sealed class ManualPlayerResizeHookPolicyTests
     }
 
     [Test]
-    public void PlayerVolume_保存値が0へリセットされた時だけ起動時に50へ戻す()
+    public void PlayerVolume_保存値が0または100へリセットされた時は起動時に50へ戻す()
     {
         string playerSource = GetMainWindowPlayerSourceText();
         string windowSource = GetRepoText("Views", "Main", "MainWindow.xaml.cs");
 
         Assert.That(playerSource, Does.Contain("private const double DefaultPlayerVolume = 0.5d;"));
         Assert.That(playerSource, Does.Contain("private static double ResolveSavedPlayerVolumeSetting(double volume)"));
-        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d ? DefaultPlayerVolume : resolvedVolume;"));
-        Assert.That(playerSource, Does.Not.Contain("resolvedVolume >= 1d"));
+        Assert.That(playerSource, Does.Contain("return resolvedVolume <= 0d || resolvedVolume >= 1d"));
         Assert.That(
             windowSource,
             Does.Contain("ResolveSavedPlayerVolumeSetting(Properties.Settings.Default.PlayerVolume)")
@@ -70,11 +69,27 @@ public sealed class ManualPlayerResizeHookPolicyTests
         Assert.That(mainWindowPlayerSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
         Assert.That(upperTabPlayerSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
         Assert.That(fullscreenWindowSource, Does.Contain("indigoPlayerHostVolumeApplied = '1'"));
+        Assert.That(mainWindowPlayerSource, Does.Contain("indigoPlayerHostVolumeApplying = '1'"));
+        Assert.That(upperTabPlayerSource, Does.Contain("indigoPlayerHostVolumeApplying = '1'"));
         Assert.That(
             upperTabPlayerSource,
             Does.Contain("player.dataset.indigoPlayerHostVolumeApplied !== '1'")
         );
+        Assert.That(
+            upperTabPlayerSource,
+            Does.Contain("player.dataset.indigoPlayerHostVolumeApplying === '1'")
+        );
         Assert.That(upperTabPlayerSource, Does.Not.Contain("notifyVolume();"));
+    }
+
+    [Test]
+    public void WebViewPlayer_動画切り替え時の100パーセント通知は保存しない()
+    {
+        string playerSource = GetMainWindowPlayerSourceText();
+
+        Assert.That(playerSource, Does.Contain("if (resolvedVolume >= 1d && currentVolume < 0.999d)"));
+        Assert.That(playerSource, Does.Contain("player webview default volume ignored"));
+        Assert.That(playerSource, Does.Contain("return;"));
     }
 
     [Test]
